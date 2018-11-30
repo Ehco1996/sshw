@@ -57,7 +57,7 @@ func LoadConfig() error {
 	if err != nil {
 		return err
 	}
-	b, err := ioutil.ReadFile(path.Join(u.HomeDir, ".sshw"))
+	b, err := ioutil.ReadFile(path.Join(u.HomeDir, "gwork/.sshw"))
 	if err != nil {
 		return err
 	}
