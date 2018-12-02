@@ -1,4 +1,4 @@
-module github.com/yinheli/sshw
+module github.com/Ehco1996/sshw
 
 go 1.25
 
