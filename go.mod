@@ -1,4 +1,4 @@
-module github.com/yinheli/sshw
+module github.com/Ehco1996/sshw
 
 require (
 	github.com/chzyer/logex v1.1.10 // indirect
