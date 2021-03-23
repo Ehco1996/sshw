@@ -15,3 +15,7 @@
 # Misc
 /dist
 .idea
+
+# dist
+.dist
+.DS_Store

@@ -1,24 +1,16 @@
-# sshw
-
-[![Build Status](https://travis-ci.org/yinheli/sshw.svg?branch=master)](https://travis-ci.org/yinheli/sshw)
-
-ssh client wrapper for automatic login.
-
-![usage](./assets/sshw-demo.gif)
-
 ## install
 
 use `go get`
 
 ```
-go get -u github.com/yinheli/sshw/cmd/sshw
+go get -u github.com/Ehco1996/sshw/cmd/sshw
 ```
 
 or download binary from [releases](//github.com/yinheli/sshw/releases).
 
 ## config
 
-put config file in `~/.sshw` or `~/.sshw.yml` or `~/.sshw.yaml` or `./.sshw` or `./.sshw.yml` or `./.sshw.yaml`.
+put config file in `gwork/sshw.yml`
 
 config example:
 
