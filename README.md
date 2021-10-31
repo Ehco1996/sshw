@@ -14,7 +14,7 @@ use `go get`
 go install github.com/yinheli/sshw/cmd/sshw@latest
 ```
 
-or download binary from [releases](//github.com/yinheli/sshw/releases).
+or download binary from [releases](//github.com/Ehco1996/sshw/releases).
 
 ## config
 

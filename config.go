@@ -73,7 +73,12 @@ func GetConfig() []*Node {
 }
 
 func LoadConfig() error {
-	b, err := LoadConfigBytes(".sshw", ".sshw.yml", ".sshw.yaml")
+	var paths []string
+	if envPath := os.Getenv("SSHW_CONFIG_PATH"); envPath != "" {
+		paths = []string{envPath}
+	}
+	paths = append(paths, ".sshw", ".sshw.yml", ".sshw.yaml")
+	b, err := LoadConfigBytes(paths...)
 	if err != nil {
 		return err
 	}
