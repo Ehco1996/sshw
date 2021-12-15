@@ -137,7 +137,6 @@ func setupKeyboardAuth(node *Node) (ssh.AuthMethod, cleanupFunc, error) {
 	return ssh.KeyboardInteractive(func(user, instruction string, questions []string, echos []bool) ([]string, error) {
 		answers := make([]string, 0, len(questions))
 		for i, q := range questions {
-			fmt.Print(q)
 			if echos[i] {
 				scan := bufio.NewScanner(os.Stdin)
 				if scan.Scan() {
