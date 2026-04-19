@@ -5,6 +5,11 @@
 *.so
 *.dylib
 /build
+/bin
+/sshw
+
+# Local notes and design docs (not shipped with the repo)
+/docs
 
 # Test binary, build with `go test -c`
 *.test

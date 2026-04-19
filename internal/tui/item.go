@@ -20,6 +20,29 @@ func (i item) FilterValue() string {
 	return fmt.Sprintf("%s %s %s %d", i.node.Name, i.node.User, i.node.Host, i.node.Port)
 }
 
+// indexedLeafItem is a flattened connectable host for the global palette.
+type indexedLeafItem struct {
+	idx IndexedHost
+}
+
+func (i indexedLeafItem) FilterValue() string {
+	return filterValueForIndexed(i.idx)
+}
+
+func filterValueForIndexed(idx IndexedHost) string {
+	n := idx.Node
+	user := n.User
+	if user == "" {
+		user = "root"
+	}
+	port := ""
+	if n.Port > 0 {
+		port = fmt.Sprintf("%d", n.Port)
+	}
+	parts := []string{idx.Breadcrumb, n.Name, n.Alias, n.Host, user, port}
+	return strings.TrimSpace(strings.Join(parts, " "))
+}
+
 func nodesToItems(nodes []*sshw.Node) []item {
 	items := make([]item, len(nodes))
 	for i, n := range nodes {
@@ -46,11 +69,15 @@ type columnWidths struct {
 func computeColumns(items []list.Item) columnWidths {
 	cols := columnWidths{name: 8, host: 8, user: 4}
 	for _, li := range items {
-		it, ok := li.(item)
-		if !ok {
+		var n *sshw.Node
+		switch v := li.(type) {
+		case item:
+			n = v.node
+		case indexedLeafItem:
+			n = v.idx.Node
+		default:
 			continue
 		}
-		n := it.node
 		if w := lipgloss.Width(n.Name); w > cols.name {
 			cols.name = w
 		}
@@ -90,19 +117,19 @@ func (d compactDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd {
 }
 
 func (d compactDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
-	it, ok := listItem.(item)
-	if !ok {
-		return
-	}
-
-	node := it.node
 	sel := index == m.Index()
-	isDir := len(node.Children) > 0
-
-	if isDir {
-		d.renderDir(w, node, sel, m.Width())
-	} else {
-		d.renderHost(w, node, sel, m.Width())
+	switch it := listItem.(type) {
+	case item:
+		node := it.node
+		if len(node.Children) > 0 {
+			d.renderDir(w, node, sel, m.Width())
+		} else {
+			d.renderHost(w, node, sel, m.Width())
+		}
+	case indexedLeafItem:
+		d.renderIndexedLeaf(w, it.idx, sel, m.Width())
+	default:
+		return
 	}
 }
 
@@ -258,6 +285,82 @@ func (d compactDelegate) renderHost(w io.Writer, node *sshw.Node, sel bool, term
 	}
 
 	// Hard truncate to terminal width to prevent wrapping
+	if lipgloss.Width(line) > termWidth {
+		line = truncateWithWidth(line, termWidth)
+	}
+	fmt.Fprint(w, line)
+}
+
+func (d compactDelegate) renderIndexedLeaf(w io.Writer, idx IndexedHost, sel bool, termWidth int) {
+	n := idx.Node
+	cols := d.cols
+
+	bc := idx.Breadcrumb
+	bcMax := max(0, termWidth/3)
+	if bc != "" && lipgloss.Width(bc) > bcMax {
+		bc = truncateWithWidth(bc, bcMax)
+	}
+
+	nameW := cols.name + 2
+	maxNameW := termWidth/4 - 3
+	if nameW > maxNameW && maxNameW > 8 {
+		nameW = maxNameW
+	}
+	name := n.Name
+	if lipgloss.Width(name) > nameW-2 {
+		name = truncateWithWidth(name, nameW-2)
+	}
+	host := n.Host
+	user := n.User
+	if user == "" {
+		user = "root"
+	}
+	port := ""
+	if n.Port > 0 && n.Port != 22 {
+		port = fmt.Sprintf(":%d", n.Port)
+	} else {
+		port = ":22"
+	}
+	var jump string
+	if len(n.Jump) > 0 {
+		jName := n.Jump[0].Name
+		if jName == "" {
+			jName = n.Jump[0].Host
+		}
+		jump = " → " + jName
+	}
+
+	bcCol := lipgloss.NewStyle().Width(min(lipgloss.Width(bc)+2, bcMax+2))
+	nameCol := lipgloss.NewStyle().Width(nameW)
+	hostCol := lipgloss.NewStyle().Width(cols.host + 2)
+	userCol := lipgloss.NewStyle().Width(cols.user + 2)
+
+	bcPrefix := ""
+	if bc != "" {
+		bcPrefix = bcCol.Render(breadcrumbStyle.Render(bc)) + " "
+	}
+
+	var line string
+	if sel {
+		line = fmt.Sprintf("%s%s%s%s%s%s%s",
+			cursorStyle.Render(" ▸ "),
+			bcPrefix,
+			nameCol.Render(selNameStyle.Render(name)),
+			hostCol.Render(selHostStyle.Render(host)),
+			userCol.Render(selUserStyle.Render(user)),
+			selPortStyle.Render(port),
+			selJumpStyle.Render(jump),
+		)
+	} else {
+		line = fmt.Sprintf("   %s%s%s%s%s%s",
+			bcPrefix,
+			nameCol.Render(norNameStyle.Render(name)),
+			hostCol.Render(norHostStyle.Render(host)),
+			userCol.Render(norUserStyle.Render(user)),
+			norPortStyle.Render(port),
+			norJumpStyle.Render(jump),
+		)
+	}
 	if lipgloss.Width(line) > termWidth {
 		line = truncateWithWidth(line, termWidth)
 	}

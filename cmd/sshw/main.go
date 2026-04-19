@@ -19,16 +19,11 @@ var (
 	log = sshw.GetLogger()
 )
 
-func findAlias(nodes []*sshw.Node, nodeAlias string) *sshw.Node {
-	for _, node := range nodes {
-		if node.Alias == nodeAlias {
-			return node
-		}
-		if len(node.Children) > 0 {
-			return findAlias(node.Children, nodeAlias)
-		}
+func connectableDisplayUser(n *sshw.Node) string {
+	if n.User != "" {
+		return n.User
 	}
-	return nil
+	return "root"
 }
 
 func main() {
@@ -63,15 +58,27 @@ func main() {
 		}
 	}
 
-	// login by alias
-	if len(os.Args) > 1 {
-		var nodeAlias = os.Args[1]
-		var nodes = sshw.GetConfig()
-		var node = findAlias(nodes, nodeAlias)
-		if node != nil {
-			client := sshw.NewClient(node)
+	token := ""
+	if flag.NArg() > 0 {
+		token = flag.Arg(0)
+	}
+
+	if token != "" {
+		nodes := sshw.GetConfig()
+		matches := sshw.FindConnectableByNameOrAlias(nodes, token)
+		switch len(matches) {
+		case 1:
+			client := sshw.NewClient(matches[0])
 			client.Login()
 			return
+		case 0:
+			// fall through to TUI
+		default:
+			fmt.Fprintf(os.Stderr, "ambiguous name or alias %q (%d matches):\n", token, len(matches))
+			for i, n := range matches {
+				fmt.Fprintf(os.Stderr, "  %d) %s @ %s (%s)\n", i+1, connectableDisplayUser(n), n.Host, n.Name)
+			}
+			os.Exit(1)
 		}
 	}
 

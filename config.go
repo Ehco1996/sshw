@@ -39,6 +39,29 @@ func (n *Node) String() string {
 	return n.Name
 }
 
+// Connectable reports whether this node is a leaf host entry (same rule as the TUI: Enter connects).
+func (n *Node) Connectable() bool {
+	return n.Host != "" && len(n.Children) == 0
+}
+
+// FindConnectableByNameOrAlias returns all connectable nodes whose Name or Alias equals token (exact match).
+func FindConnectableByNameOrAlias(nodes []*Node, token string) []*Node {
+	var out []*Node
+	var walk func([]*Node)
+	walk = func(ns []*Node) {
+		for _, n := range ns {
+			if n.Connectable() && (n.Name == token || (n.Alias != "" && n.Alias == token)) {
+				out = append(out, n)
+			}
+			if len(n.Children) > 0 {
+				walk(n.Children)
+			}
+		}
+	}
+	walk(nodes)
+	return out
+}
+
 func (n *Node) user() string {
 	if n.User == "" {
 		return "root"
