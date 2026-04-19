@@ -199,6 +199,7 @@ func (d compactDelegate) renderDir(w io.Writer, node *sshw.Node, sel bool, width
 		preview = childPreview(node.Children, previewMaxWidth)
 	}
 
+	var line string
 	if sel {
 		nameStr := selNameStyle.Render(name)
 		var mid string
@@ -208,7 +209,7 @@ func (d compactDelegate) renderDir(w io.Writer, node *sshw.Node, sel bool, width
 		badgeStr := selDirBadgeStyle.Render(badge)
 		usedWidth := 3 + lipgloss.Width(nameStr) + lipgloss.Width(mid) + lipgloss.Width(badgeStr)
 		gap := max(0, width-usedWidth)
-		fmt.Fprint(w, cursorStyle.Render(cursor)+nameStr+mid+strings.Repeat(" ", gap)+badgeStr)
+		line = cursorStyle.Render(cursor) + nameStr + mid + strings.Repeat(" ", gap) + badgeStr
 	} else {
 		nameStr := norNameStyle.Render(name)
 		var mid string
@@ -218,8 +219,19 @@ func (d compactDelegate) renderDir(w io.Writer, node *sshw.Node, sel bool, width
 		badgeStr := norDirBadgeStyle.Render(badge)
 		usedWidth := 3 + lipgloss.Width(nameStr) + lipgloss.Width(mid) + lipgloss.Width(badgeStr)
 		gap := max(0, width-usedWidth)
-		fmt.Fprint(w, cursor+nameStr+mid+strings.Repeat(" ", gap)+badgeStr)
+		line = cursor + nameStr + mid + strings.Repeat(" ", gap) + badgeStr
 	}
+	fmt.Fprint(w, applyRowHighlight(line, sel, width))
+}
+
+func applyRowHighlight(line string, sel bool, termWidth int) string {
+	if termWidth > 0 && lipgloss.Width(line) > termWidth {
+		line = truncateWithWidth(line, termWidth)
+	}
+	if !sel || termWidth <= 0 {
+		return line
+	}
+	return selRowStyle.Width(termWidth).Render(line)
 }
 
 func truncateWithWidth(s string, maxW int) string {
@@ -314,11 +326,7 @@ func (d compactDelegate) renderHost(w io.Writer, node *sshw.Node, sel bool, term
 		)
 	}
 
-	// Hard truncate to terminal width to prevent wrapping
-	if lipgloss.Width(line) > termWidth {
-		line = truncateWithWidth(line, termWidth)
-	}
-	fmt.Fprint(w, line)
+	fmt.Fprint(w, applyRowHighlight(line, sel, termWidth))
 }
 
 func (d compactDelegate) renderIndexedLeaf(w io.Writer, idx IndexedHost, sel bool, termWidth int) {
@@ -411,8 +419,5 @@ func (d compactDelegate) renderIndexedLeaf(w io.Writer, idx IndexedHost, sel boo
 			norJumpStyle.Render(jump),
 		)
 	}
-	if lipgloss.Width(line) > termWidth {
-		line = truncateWithWidth(line, termWidth)
-	}
-	fmt.Fprint(w, line)
+	fmt.Fprint(w, applyRowHighlight(line, sel, termWidth))
 }

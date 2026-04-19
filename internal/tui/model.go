@@ -10,6 +10,11 @@ import (
 	"github.com/yinheli/sshw"
 )
 
+const (
+	chromeLines  = 4 // header + sep + body + sep + help
+	maxBodyLines = 28 // cap list height on very tall terminals
+)
+
 type listState struct {
 	items  []list.Item
 	cursor int
@@ -66,12 +71,23 @@ func globalPaletteFilter(term string, targets []string) []list.Rank {
 	return list.DefaultFilter(trimmed, targets)
 }
 
+func (m *model) syncLayout() {
+	if m.width <= 0 || m.height <= 0 {
+		return
+	}
+	avail := m.height - chromeLines
+	if avail < 1 {
+		avail = 1
+	}
+	listH := max(3, min(maxBodyLines, avail))
+	m.list.SetSize(m.width, listH)
+}
+
 func (m *model) setItems(items []list.Item, title string) tea.Cmd {
 	cols := computeColumns(items)
 	*m.cols = cols
 	cmd := m.list.SetItems(items)
-	listHeight := min(len(items)+4, 24)
-	m.list.SetSize(m.width, listHeight)
+	m.syncLayout()
 	return cmd
 }
 
@@ -145,8 +161,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		listHeight := min(len(m.list.Items())+4, 24)
-		m.list.SetSize(m.width, listHeight)
+		m.syncLayout()
 		return m, nil
 
 	case tea.KeyMsg:
@@ -224,11 +239,12 @@ func (m *model) View() string {
 	}
 
 	header := m.renderHeader()
-	sep := separatorStyle.Render(strings.Repeat("─", m.width))
+	topSep := separatorStyle.Render(strings.Repeat("─", m.width))
 	body := m.list.View()
+	botSep := separatorStyle.Render(strings.Repeat("─", m.width))
 	help := m.renderHelp()
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, sep, body, sep, help)
+	return lipgloss.JoinVertical(lipgloss.Left, header, topSep, body, botSep, help)
 }
 
 func (m *model) renderHeader() string {

@@ -46,3 +46,8 @@ var (
 	selAliasStyle    = lipgloss.NewStyle().Foreground(colorPrimary)
 	norAliasStyle    = lipgloss.NewStyle().Foreground(colorDim)
 )
+
+// Selected list row background (full-width bar)
+var selRowStyle = lipgloss.NewStyle().
+	Background(lipgloss.AdaptiveColor{Light: "254", Dark: "236"}).
+	Foreground(colorText)
