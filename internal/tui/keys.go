@@ -7,6 +7,7 @@ type keyMap struct {
 	Back          key.Binding
 	Quit          key.Binding
 	GlobalPalette key.Binding
+	HealthCheck   key.Binding
 }
 
 var keys = keyMap{
@@ -25,5 +26,9 @@ var keys = keyMap{
 	GlobalPalette: key.NewBinding(
 		key.WithKeys("ctrl+k"),
 		key.WithHelp("ctrl+k", "global"),
+	),
+	HealthCheck: key.NewBinding(
+		key.WithKeys("ctrl+h"),
+		key.WithHelp("ctrl+h", "check"),
 	),
 }

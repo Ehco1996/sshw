@@ -1,10 +1,12 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/yinheli/sshw"
@@ -24,6 +26,7 @@ type listState struct {
 type model struct {
 	list       list.Model
 	cols       *columnWidths
+	health     *healthState
 	stack      []listState
 	selected   *sshw.Node
 	quitting   bool
@@ -37,8 +40,9 @@ type model struct {
 func newModel(nodes []*sshw.Node) *model {
 	items := nodesToListItems(nodesToItems(nodes))
 	cols := computeColumns(items)
+	health := newHealthState()
 
-	delegate := compactDelegate{cols: &cols}
+	delegate := compactDelegate{cols: &cols, health: health}
 	l := list.New(items, delegate, 0, 0)
 	l.SetShowTitle(false)
 	l.SetShowStatusBar(false)
@@ -54,9 +58,10 @@ func newModel(nodes []*sshw.Node) *model {
 	l.KeyMap.NextPage.SetKeys("pgdown")
 
 	return &model{
-		list:  l,
-		cols:  &cols,
-		roots: nodes,
+		list:   l,
+		cols:   &cols,
+		health: health,
+		roots:  nodes,
 	}
 }
 
@@ -164,13 +169,47 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.syncLayout()
 		return m, nil
 
+	case spinner.TickMsg:
+		if m.health.active {
+			var cmd tea.Cmd
+			m.health.spinner, cmd = m.health.spinner.Update(msg)
+			return m, cmd
+		}
+		return m, nil
+
+	case healthCheckResultMsg:
+		if msg.generation != m.health.generation {
+			return m, nil
+		}
+		m.health.results[msg.node] = &healthResult{
+			done: true, ok: msg.err == nil, latency: msg.latency, err: msg.err,
+		}
+		allDone := true
+		for _, r := range m.health.results {
+			if !r.done {
+				allDone = false
+				break
+			}
+		}
+		if allDone {
+			m.health.active = false
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		if m.list.FilterState() == list.Filtering {
 			break
 		}
 
 		switch {
+		case key.Matches(msg, keys.HealthCheck):
+			if !m.health.active {
+				cmd := m.startHealthCheck()
+				return m, cmd
+			}
+
 		case key.Matches(msg, keys.GlobalPalette):
+			m.health.reset()
 			cmd := m.toggleGlobalPalette()
 			return m, cmd
 
@@ -187,6 +226,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case item:
 				node := v.node
 				if len(node.Children) > 0 {
+					m.health.reset()
 					m.stack = append(m.stack, listState{
 						items:  m.list.Items(),
 						cursor: m.list.Index(),
@@ -204,6 +244,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case key.Matches(msg, keys.Back):
+			m.health.reset()
 			if m.globalMode {
 				cmd := m.exitGlobalPalette()
 				return m, cmd
@@ -247,28 +288,75 @@ func (m *model) View() string {
 	return lipgloss.JoinVertical(lipgloss.Left, header, topSep, body, botSep, help)
 }
 
+func (m *model) startHealthCheck() tea.Cmd {
+	var nodes []*sshw.Node
+	for _, li := range m.list.Items() {
+		switch v := li.(type) {
+		case item:
+			if v.node.Connectable() {
+				nodes = append(nodes, v.node)
+			}
+		case indexedLeafItem:
+			nodes = append(nodes, v.idx.Node)
+		}
+	}
+	if len(nodes) == 0 {
+		return nil
+	}
+
+	m.health.reset()
+	m.health.generation++
+	m.health.active = true
+	gen := m.health.generation
+
+	cmds := []tea.Cmd{m.health.spinner.Tick}
+	for _, n := range nodes {
+		m.health.results[n] = &healthResult{}
+		cmds = append(cmds, checkHostCmd(n, gen))
+	}
+	return tea.Batch(cmds...)
+}
+
+func (m *model) renderHealthSummary() string {
+	total, ok, fail := m.health.counts()
+	if total == 0 {
+		return ""
+	}
+	if m.health.active {
+		return m.health.spinner.View() + " " +
+			healthCheckingStyle.Render(fmt.Sprintf("checking %d/%d", ok+fail, total))
+	}
+	var parts []string
+	if ok > 0 {
+		parts = append(parts, healthOKStyle.Render(fmt.Sprintf("✓ %d", ok)))
+	}
+	if fail > 0 {
+		parts = append(parts, healthFailStyle.Render(fmt.Sprintf("✗ %d", fail)))
+	}
+	return strings.Join(parts, "  ")
+}
+
 func (m *model) renderHeader() string {
 	parts := make([]string, 0, len(m.stack)+3)
 	parts = append(parts, headerTitleStyle.Render("sshw"))
 	if m.globalMode {
 		parts = append(parts, headerPathStyle.Render("GLOBAL"))
-		path := strings.Join(parts, headerSepStyle.Render(" ❯ "))
-		count := headerCountStyle.Render(strings.Repeat(" ", max(0,
-			m.width-lipgloss.Width(path)-12)))
-		return " " + path + count
-	}
-	for _, s := range m.stack {
-		parts = append(parts, headerPathStyle.Render(s.title))
-	}
-	if m.list.Title != "" && m.list.Title != "sshw" && m.list.Title != "__global__" {
-		parts = append(parts, headerPathStyle.Render(m.list.Title))
+	} else {
+		for _, s := range m.stack {
+			parts = append(parts, headerPathStyle.Render(s.title))
+		}
+		if m.list.Title != "" && m.list.Title != "sshw" && m.list.Title != "__global__" {
+			parts = append(parts, headerPathStyle.Render(m.list.Title))
+		}
 	}
 
 	path := strings.Join(parts, headerSepStyle.Render(" ❯ "))
-	count := headerCountStyle.Render(strings.Repeat(" ", max(0,
-		m.width-lipgloss.Width(path)-12)))
+	rightInfo := m.renderHealthSummary()
+	rightWidth := lipgloss.Width(rightInfo)
+	pathWidth := lipgloss.Width(path)
+	gap := max(1, m.width-pathWidth-rightWidth-2)
 
-	return " " + path + count
+	return " " + path + strings.Repeat(" ", gap) + rightInfo
 }
 
 func (m *model) renderHelp() string {
@@ -278,6 +366,7 @@ func (m *model) renderHelp() string {
 		{"esc", "back"},
 		{"/", "name or alias"},
 		{"ctrl+k", "global"},
+		{"ctrl+h", "check"},
 		{"q", "quit"},
 	}
 

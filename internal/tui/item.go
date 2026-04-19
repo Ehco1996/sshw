@@ -117,7 +117,8 @@ func computeColumns(items []list.Item) columnWidths {
 
 // compactDelegate renders each item as a single compact line with tabular alignment.
 type compactDelegate struct {
-	cols *columnWidths
+	cols   *columnWidths
+	health *healthState
 }
 
 func (d compactDelegate) Height() int  { return 1 }
@@ -326,6 +327,12 @@ func (d compactDelegate) renderHost(w io.Writer, node *sshw.Node, sel bool, term
 		)
 	}
 
+	if d.health != nil {
+		if r, ok := d.health.results[node]; ok {
+			line += renderHealthIndicator(r, d.health.spinner)
+		}
+	}
+
 	fmt.Fprint(w, applyRowHighlight(line, sel, termWidth))
 }
 
@@ -419,5 +426,12 @@ func (d compactDelegate) renderIndexedLeaf(w io.Writer, idx IndexedHost, sel boo
 			norJumpStyle.Render(jump),
 		)
 	}
+
+	if d.health != nil {
+		if r, ok := d.health.results[n]; ok {
+			line += renderHealthIndicator(r, d.health.spinner)
+		}
+	}
+
 	fmt.Fprint(w, applyRowHighlight(line, sel, termWidth))
 }

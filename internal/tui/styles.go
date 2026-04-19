@@ -47,6 +47,18 @@ var (
 	norAliasStyle    = lipgloss.NewStyle().Foreground(colorDim)
 )
 
+// Health check indicators
+var (
+	colorHealthOK   = lipgloss.AdaptiveColor{Light: "34", Dark: "82"}
+	colorHealthFail = lipgloss.AdaptiveColor{Light: "160", Dark: "204"}
+)
+
+var (
+	healthOKStyle       = lipgloss.NewStyle().Foreground(colorHealthOK).Bold(true)
+	healthFailStyle     = lipgloss.NewStyle().Foreground(colorHealthFail).Bold(true)
+	healthCheckingStyle = lipgloss.NewStyle().Foreground(colorDim)
+)
+
 // Selected list row background (full-width bar)
 var selRowStyle = lipgloss.NewStyle().
 	Background(lipgloss.AdaptiveColor{Light: "254", Dark: "236"}).
