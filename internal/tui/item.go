@@ -1,0 +1,265 @@
+package tui
+
+import (
+	"fmt"
+	"io"
+	"strings"
+
+	"github.com/charmbracelet/bubbles/list"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/yinheli/sshw"
+)
+
+// item wraps a *sshw.Node to satisfy the bubbles/list.Item interface.
+type item struct {
+	node *sshw.Node
+}
+
+func (i item) FilterValue() string {
+	return fmt.Sprintf("%s %s %s %d", i.node.Name, i.node.User, i.node.Host, i.node.Port)
+}
+
+func nodesToItems(nodes []*sshw.Node) []item {
+	items := make([]item, len(nodes))
+	for i, n := range nodes {
+		items[i] = item{node: n}
+	}
+	return items
+}
+
+func nodesToListItems(items []item) []list.Item {
+	listItems := make([]list.Item, len(items))
+	for i, it := range items {
+		listItems[i] = it
+	}
+	return listItems
+}
+
+// columnWidths holds computed widths for tabular alignment.
+type columnWidths struct {
+	name int
+	host int
+	user int
+}
+
+func computeColumns(items []list.Item) columnWidths {
+	cols := columnWidths{name: 8, host: 8, user: 4}
+	for _, li := range items {
+		it, ok := li.(item)
+		if !ok {
+			continue
+		}
+		n := it.node
+		if w := lipgloss.Width(n.Name); w > cols.name {
+			cols.name = w
+		}
+		if w := lipgloss.Width(n.Host); w > cols.host {
+			cols.host = w
+		}
+		u := n.User
+		if u == "" {
+			u = "root"
+		}
+		if w := lipgloss.Width(u); w > cols.user {
+			cols.user = w
+		}
+	}
+	// Cap column widths to avoid overflow
+	if cols.name > 30 {
+		cols.name = 30
+	}
+	if cols.host > 25 {
+		cols.host = 25
+	}
+	if cols.user > 12 {
+		cols.user = 12
+	}
+	return cols
+}
+
+// compactDelegate renders each item as a single compact line with tabular alignment.
+type compactDelegate struct {
+	cols *columnWidths
+}
+
+func (d compactDelegate) Height() int  { return 1 }
+func (d compactDelegate) Spacing() int { return 0 }
+func (d compactDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd {
+	return nil
+}
+
+func (d compactDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
+	it, ok := listItem.(item)
+	if !ok {
+		return
+	}
+
+	node := it.node
+	sel := index == m.Index()
+	isDir := len(node.Children) > 0
+
+	if isDir {
+		d.renderDir(w, node, sel, m.Width())
+	} else {
+		d.renderHost(w, node, sel, m.Width())
+	}
+}
+
+// countLeafHosts counts all leaf (non-directory) nodes recursively.
+func countLeafHosts(nodes []*sshw.Node) int {
+	count := 0
+	for _, n := range nodes {
+		if len(n.Children) > 0 {
+			count += countLeafHosts(n.Children)
+		} else {
+			count++
+		}
+	}
+	return count
+}
+
+// childPreview returns a comma-separated preview of child names, truncated to fit width.
+func childPreview(nodes []*sshw.Node, maxWidth int) string {
+	if len(nodes) == 0 {
+		return ""
+	}
+	var parts []string
+	totalWidth := 0
+	for _, n := range nodes {
+		name := n.Name
+		// +2 for ", " separator
+		needed := len(name) + 2
+		if totalWidth+needed > maxWidth && len(parts) > 0 {
+			remaining := len(nodes) - len(parts)
+			if remaining > 0 {
+				parts = append(parts, fmt.Sprintf("+%d", remaining))
+			}
+			break
+		}
+		parts = append(parts, name)
+		totalWidth += needed
+	}
+	return strings.Join(parts, ", ")
+}
+
+func (d compactDelegate) renderDir(w io.Writer, node *sshw.Node, sel bool, width int) {
+	name := node.Name
+	totalHosts := countLeafHosts(node.Children)
+	badge := fmt.Sprintf(" %d hosts ›", totalHosts)
+
+	// Compute available space for preview
+	cursor := " ▸ "
+	if !sel {
+		cursor = "   "
+	}
+	nameWidth := lipgloss.Width(name)
+	badgeWidth := lipgloss.Width(badge)
+	separatorWidth := 5 // " · " with padding
+	previewMaxWidth := width - 3 - nameWidth - badgeWidth - separatorWidth
+	preview := ""
+	if previewMaxWidth > 10 {
+		preview = childPreview(node.Children, previewMaxWidth)
+	}
+
+	if sel {
+		nameStr := selNameStyle.Render(name)
+		var mid string
+		if preview != "" {
+			mid = selDirPreviewStyle.Render(" · " + preview)
+		}
+		badgeStr := selDirBadgeStyle.Render(badge)
+		usedWidth := 3 + lipgloss.Width(nameStr) + lipgloss.Width(mid) + lipgloss.Width(badgeStr)
+		gap := max(0, width-usedWidth)
+		fmt.Fprint(w, cursorStyle.Render(cursor)+nameStr+mid+strings.Repeat(" ", gap)+badgeStr)
+	} else {
+		nameStr := norNameStyle.Render(name)
+		var mid string
+		if preview != "" {
+			mid = norDirPreviewStyle.Render(" · " + preview)
+		}
+		badgeStr := norDirBadgeStyle.Render(badge)
+		usedWidth := 3 + lipgloss.Width(nameStr) + lipgloss.Width(mid) + lipgloss.Width(badgeStr)
+		gap := max(0, width-usedWidth)
+		fmt.Fprint(w, cursor+nameStr+mid+strings.Repeat(" ", gap)+badgeStr)
+	}
+}
+
+func truncateWithWidth(s string, maxW int) string {
+	w := lipgloss.Width(s)
+	if w <= maxW {
+		return s
+	}
+	// Truncate rune by rune
+	result := []rune(s)
+	for lipgloss.Width(string(result)) > maxW-1 && len(result) > 0 {
+		result = result[:len(result)-1]
+	}
+	return string(result) + "…"
+}
+
+func (d compactDelegate) renderHost(w io.Writer, node *sshw.Node, sel bool, termWidth int) {
+	cols := d.cols
+
+	// Cap name column to avoid overflow on narrow terminals
+	nameW := cols.name + 2
+	maxNameW := termWidth/3 - 3
+	if nameW > maxNameW && maxNameW > 8 {
+		nameW = maxNameW
+	}
+
+	name := node.Name
+	if lipgloss.Width(name) > nameW-2 {
+		name = truncateWithWidth(name, nameW-2)
+	}
+	host := node.Host
+	user := node.User
+	if user == "" {
+		user = "root"
+	}
+	port := ""
+	if node.Port > 0 && node.Port != 22 {
+		port = fmt.Sprintf(":%d", node.Port)
+	} else {
+		port = ":22"
+	}
+
+	var jump string
+	if len(node.Jump) > 0 {
+		jName := node.Jump[0].Name
+		if jName == "" {
+			jName = node.Jump[0].Host
+		}
+		jump = " → " + jName
+	}
+
+	nameCol := lipgloss.NewStyle().Width(nameW)
+	hostCol := lipgloss.NewStyle().Width(cols.host + 2)
+	userCol := lipgloss.NewStyle().Width(cols.user + 2)
+
+	var line string
+	if sel {
+		line = fmt.Sprintf("%s%s%s%s%s%s",
+			cursorStyle.Render(" ▸ "),
+			nameCol.Render(selNameStyle.Render(name)),
+			hostCol.Render(selHostStyle.Render(host)),
+			userCol.Render(selUserStyle.Render(user)),
+			selPortStyle.Render(port),
+			selJumpStyle.Render(jump),
+		)
+	} else {
+		line = fmt.Sprintf("   %s%s%s%s%s",
+			nameCol.Render(norNameStyle.Render(name)),
+			hostCol.Render(norHostStyle.Render(host)),
+			userCol.Render(norUserStyle.Render(user)),
+			norPortStyle.Render(port),
+			norJumpStyle.Render(jump),
+		)
+	}
+
+	// Hard truncate to terminal width to prevent wrapping
+	if lipgloss.Width(line) > termWidth {
+		line = truncateWithWidth(line, termWidth)
+	}
+	fmt.Fprint(w, line)
+}
