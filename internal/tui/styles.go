@@ -43,4 +43,6 @@ var (
 	helpKeyStyle     = lipgloss.NewStyle().Foreground(colorPrimary).Bold(true)
 	helpDescStyle    = lipgloss.NewStyle().Foreground(colorDim)
 	breadcrumbStyle  = lipgloss.NewStyle().Foreground(colorDim)
+	selAliasStyle    = lipgloss.NewStyle().Foreground(colorPrimary)
+	norAliasStyle    = lipgloss.NewStyle().Foreground(colorDim)
 )

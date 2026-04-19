@@ -260,7 +260,7 @@ func (m *model) renderHelp() string {
 		{"↑↓", "nav"},
 		{"enter", "select"},
 		{"esc", "back"},
-		{"/", "filter"},
+		{"/", "name or alias"},
 		{"ctrl+k", "global"},
 		{"q", "quit"},
 	}

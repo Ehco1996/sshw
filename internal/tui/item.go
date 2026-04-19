@@ -17,7 +17,7 @@ type item struct {
 }
 
 func (i item) FilterValue() string {
-	return fmt.Sprintf("%s %s %s %d", i.node.Name, i.node.User, i.node.Host, i.node.Port)
+	return fmt.Sprintf("%s %s %s %s %d", i.node.Name, i.node.Alias, i.node.User, i.node.Host, i.node.Port)
 }
 
 // indexedLeafItem is a flattened connectable host for the global palette.
@@ -61,9 +61,10 @@ func nodesToListItems(items []item) []list.Item {
 
 // columnWidths holds computed widths for tabular alignment.
 type columnWidths struct {
-	name int
-	host int
-	user int
+	name  int
+	alias int
+	host  int
+	user  int
 }
 
 func computeColumns(items []list.Item) columnWidths {
@@ -81,6 +82,12 @@ func computeColumns(items []list.Item) columnWidths {
 		if w := lipgloss.Width(n.Name); w > cols.name {
 			cols.name = w
 		}
+		if n.Alias != "" {
+			w := lipgloss.Width("@" + n.Alias)
+			if w > cols.alias {
+				cols.alias = w
+			}
+		}
 		if w := lipgloss.Width(n.Host); w > cols.host {
 			cols.host = w
 		}
@@ -95,6 +102,9 @@ func computeColumns(items []list.Item) columnWidths {
 	// Cap column widths to avoid overflow
 	if cols.name > 30 {
 		cols.name = 30
+	}
+	if cols.alias > 12 {
+		cols.alias = 12
 	}
 	if cols.host > 25 {
 		cols.host = 25
@@ -264,19 +274,39 @@ func (d compactDelegate) renderHost(w io.Writer, node *sshw.Node, sel bool, term
 	hostCol := lipgloss.NewStyle().Width(cols.host + 2)
 	userCol := lipgloss.NewStyle().Width(cols.user + 2)
 
+	aliasW := cols.alias
+	aliasCell := ""
+	if aliasW > 0 {
+		at := ""
+		if node.Alias != "" {
+			at = "@" + node.Alias
+			if lipgloss.Width(at) > aliasW {
+				at = truncateWithWidth(at, aliasW)
+			}
+		}
+		aliasCol := lipgloss.NewStyle().Width(aliasW + 1)
+		if sel {
+			aliasCell = aliasCol.Render(selAliasStyle.Render(at))
+		} else {
+			aliasCell = aliasCol.Render(norAliasStyle.Render(at))
+		}
+	}
+
 	var line string
 	if sel {
-		line = fmt.Sprintf("%s%s%s%s%s%s",
+		line = fmt.Sprintf("%s%s%s%s%s%s%s",
 			cursorStyle.Render(" ▸ "),
 			nameCol.Render(selNameStyle.Render(name)),
+			aliasCell,
 			hostCol.Render(selHostStyle.Render(host)),
 			userCol.Render(selUserStyle.Render(user)),
 			selPortStyle.Render(port),
 			selJumpStyle.Render(jump),
 		)
 	} else {
-		line = fmt.Sprintf("   %s%s%s%s%s",
+		line = fmt.Sprintf("   %s%s%s%s%s%s",
 			nameCol.Render(norNameStyle.Render(name)),
+			aliasCell,
 			hostCol.Render(norHostStyle.Render(host)),
 			userCol.Render(norUserStyle.Render(user)),
 			norPortStyle.Render(port),
@@ -335,6 +365,24 @@ func (d compactDelegate) renderIndexedLeaf(w io.Writer, idx IndexedHost, sel boo
 	hostCol := lipgloss.NewStyle().Width(cols.host + 2)
 	userCol := lipgloss.NewStyle().Width(cols.user + 2)
 
+	aliasW := cols.alias
+	aliasCell := ""
+	if aliasW > 0 {
+		at := ""
+		if n.Alias != "" {
+			at = "@" + n.Alias
+			if lipgloss.Width(at) > aliasW {
+				at = truncateWithWidth(at, aliasW)
+			}
+		}
+		aliasCol := lipgloss.NewStyle().Width(aliasW + 1)
+		if sel {
+			aliasCell = aliasCol.Render(selAliasStyle.Render(at))
+		} else {
+			aliasCell = aliasCol.Render(norAliasStyle.Render(at))
+		}
+	}
+
 	bcPrefix := ""
 	if bc != "" {
 		bcPrefix = bcCol.Render(breadcrumbStyle.Render(bc)) + " "
@@ -342,19 +390,21 @@ func (d compactDelegate) renderIndexedLeaf(w io.Writer, idx IndexedHost, sel boo
 
 	var line string
 	if sel {
-		line = fmt.Sprintf("%s%s%s%s%s%s%s",
+		line = fmt.Sprintf("%s%s%s%s%s%s%s%s",
 			cursorStyle.Render(" ▸ "),
 			bcPrefix,
 			nameCol.Render(selNameStyle.Render(name)),
+			aliasCell,
 			hostCol.Render(selHostStyle.Render(host)),
 			userCol.Render(selUserStyle.Render(user)),
 			selPortStyle.Render(port),
 			selJumpStyle.Render(jump),
 		)
 	} else {
-		line = fmt.Sprintf("   %s%s%s%s%s%s",
+		line = fmt.Sprintf("   %s%s%s%s%s%s%s",
 			bcPrefix,
 			nameCol.Render(norNameStyle.Render(name)),
+			aliasCell,
 			hostCol.Render(norHostStyle.Render(host)),
 			userCol.Render(norUserStyle.Render(user)),
 			norPortStyle.Render(port),
