@@ -31,10 +31,7 @@ func (i indexedLeafItem) FilterValue() string {
 
 func filterValueForIndexed(idx IndexedHost) string {
 	n := idx.Node
-	user := n.User
-	if user == "" {
-		user = "root"
-	}
+	user := n.EffectiveUser()
 	port := ""
 	if n.Port > 0 {
 		port = fmt.Sprintf("%d", n.Port)
@@ -91,10 +88,7 @@ func computeColumns(items []list.Item) columnWidths {
 		if w := lipgloss.Width(n.Host); w > cols.host {
 			cols.host = w
 		}
-		u := n.User
-		if u == "" {
-			u = "root"
-		}
+		u := n.EffectiveUser()
 		if w := lipgloss.Width(u); w > cols.user {
 			cols.user = w
 		}
@@ -248,183 +242,106 @@ func truncateWithWidth(s string, maxW int) string {
 	return string(result) + "…"
 }
 
-func (d compactDelegate) renderHost(w io.Writer, node *sshw.Node, sel bool, termWidth int) {
-	cols := d.cols
-
-	// Cap name column to avoid overflow on narrow terminals
-	nameW := cols.name + 2
-	maxNameW := termWidth/3 - 3
-	if nameW > maxNameW && maxNameW > 8 {
-		nameW = maxNameW
+func portDisplay(n *sshw.Node) string {
+	if n.Port > 0 && n.Port != 22 {
+		return fmt.Sprintf(":%d", n.Port)
 	}
-
-	name := node.Name
-	if lipgloss.Width(name) > nameW-2 {
-		name = truncateWithWidth(name, nameW-2)
-	}
-	host := node.Host
-	user := node.User
-	if user == "" {
-		user = "root"
-	}
-	port := ""
-	if node.Port > 0 && node.Port != 22 {
-		port = fmt.Sprintf(":%d", node.Port)
-	} else {
-		port = ":22"
-	}
-
-	var jump string
-	if len(node.Jump) > 0 {
-		jName := node.Jump[0].Name
-		if jName == "" {
-			jName = node.Jump[0].Host
-		}
-		jump = " → " + jName
-	}
-
-	nameCol := lipgloss.NewStyle().Width(nameW)
-	hostCol := lipgloss.NewStyle().Width(cols.host + 2)
-	userCol := lipgloss.NewStyle().Width(cols.user + 2)
-
-	aliasW := cols.alias
-	aliasCell := ""
-	if aliasW > 0 {
-		at := ""
-		if node.Alias != "" {
-			at = "@" + node.Alias
-			if lipgloss.Width(at) > aliasW {
-				at = truncateWithWidth(at, aliasW)
-			}
-		}
-		aliasCol := lipgloss.NewStyle().Width(aliasW + 1)
-		if sel {
-			aliasCell = aliasCol.Render(selAliasStyle.Render(at))
-		} else {
-			aliasCell = aliasCol.Render(norAliasStyle.Render(at))
-		}
-	}
-
-	var line string
-	if sel {
-		line = fmt.Sprintf("%s%s%s%s%s%s%s",
-			cursorStyle.Render(" ▸ "),
-			nameCol.Render(selNameStyle.Render(name)),
-			aliasCell,
-			hostCol.Render(selHostStyle.Render(host)),
-			userCol.Render(selUserStyle.Render(user)),
-			selPortStyle.Render(port),
-			selJumpStyle.Render(jump),
-		)
-	} else {
-		line = fmt.Sprintf("   %s%s%s%s%s%s",
-			nameCol.Render(norNameStyle.Render(name)),
-			aliasCell,
-			hostCol.Render(norHostStyle.Render(host)),
-			userCol.Render(norUserStyle.Render(user)),
-			norPortStyle.Render(port),
-			norJumpStyle.Render(jump),
-		)
-	}
-
-	if d.health != nil {
-		if r, ok := d.health.results[node]; ok {
-			line += renderHealthIndicator(r, d.health.spinner)
-		}
-	}
-
-	fmt.Fprint(w, applyRowHighlight(line, sel, termWidth))
+	return ":22"
 }
 
-func (d compactDelegate) renderIndexedLeaf(w io.Writer, idx IndexedHost, sel bool, termWidth int) {
-	n := idx.Node
+func jumpDisplay(n *sshw.Node) string {
+	if jl := n.JumpLabel(); jl != "" {
+		return " → " + jl
+	}
+	return ""
+}
+
+func aliasCellFor(cols *columnWidths, n *sshw.Node, sel bool) string {
+	aliasW := cols.alias
+	if aliasW <= 0 {
+		return ""
+	}
+	at := ""
+	if n.Alias != "" {
+		at = "@" + n.Alias
+		if lipgloss.Width(at) > aliasW {
+			at = truncateWithWidth(at, aliasW)
+		}
+	}
+	aliasCol := lipgloss.NewStyle().Width(aliasW + 1)
+	if sel {
+		return aliasCol.Render(selAliasStyle.Render(at))
+	}
+	return aliasCol.Render(norAliasStyle.Render(at))
+}
+
+// hostRowOpts tweaks layout between the normal host list row and the global palette row.
+type hostRowOpts struct {
+	breadcrumb string // non-empty enables breadcrumb prefix (global palette)
+	nameDenom  int    // termWidth/nameDenom - 3 caps name column; host list uses 3, global uses 4
+}
+
+func (o hostRowOpts) nameWidthDenom() int {
+	if o.nameDenom <= 0 {
+		return 3
+	}
+	return o.nameDenom
+}
+
+func (d compactDelegate) renderHostRow(w io.Writer, n *sshw.Node, sel bool, termWidth int, opts hostRowOpts) {
 	cols := d.cols
 
-	bc := idx.Breadcrumb
-	bcMax := max(0, termWidth/3)
-	if bc != "" && lipgloss.Width(bc) > bcMax {
-		bc = truncateWithWidth(bc, bcMax)
-	}
-
 	nameW := cols.name + 2
-	maxNameW := termWidth/4 - 3
+	maxNameW := termWidth/opts.nameWidthDenom() - 3
 	if nameW > maxNameW && maxNameW > 8 {
 		nameW = maxNameW
 	}
+
 	name := n.Name
 	if lipgloss.Width(name) > nameW-2 {
 		name = truncateWithWidth(name, nameW-2)
 	}
 	host := n.Host
-	user := n.User
-	if user == "" {
-		user = "root"
-	}
-	port := ""
-	if n.Port > 0 && n.Port != 22 {
-		port = fmt.Sprintf(":%d", n.Port)
-	} else {
-		port = ":22"
-	}
-	var jump string
-	if len(n.Jump) > 0 {
-		jName := n.Jump[0].Name
-		if jName == "" {
-			jName = n.Jump[0].Host
+	user := n.EffectiveUser()
+	port := portDisplay(n)
+	jump := jumpDisplay(n)
+
+	bcPrefix := ""
+	if opts.breadcrumb != "" {
+		bcMax := max(0, termWidth/3)
+		bc := opts.breadcrumb
+		if lipgloss.Width(bc) > bcMax {
+			bc = truncateWithWidth(bc, bcMax)
 		}
-		jump = " → " + jName
+		bcCol := lipgloss.NewStyle().Width(min(lipgloss.Width(bc)+2, bcMax+2))
+		bcPrefix = bcCol.Render(breadcrumbStyle.Render(bc)) + " "
 	}
 
-	bcCol := lipgloss.NewStyle().Width(min(lipgloss.Width(bc)+2, bcMax+2))
 	nameCol := lipgloss.NewStyle().Width(nameW)
 	hostCol := lipgloss.NewStyle().Width(cols.host + 2)
 	userCol := lipgloss.NewStyle().Width(cols.user + 2)
+	aliasCell := aliasCellFor(cols, n, sel)
 
-	aliasW := cols.alias
-	aliasCell := ""
-	if aliasW > 0 {
-		at := ""
-		if n.Alias != "" {
-			at = "@" + n.Alias
-			if lipgloss.Width(at) > aliasW {
-				at = truncateWithWidth(at, aliasW)
-			}
-		}
-		aliasCol := lipgloss.NewStyle().Width(aliasW + 1)
-		if sel {
-			aliasCell = aliasCol.Render(selAliasStyle.Render(at))
-		} else {
-			aliasCell = aliasCol.Render(norAliasStyle.Render(at))
-		}
-	}
-
-	bcPrefix := ""
-	if bc != "" {
-		bcPrefix = bcCol.Render(breadcrumbStyle.Render(bc)) + " "
+	cursorLead := "   "
+	if sel {
+		cursorLead = cursorStyle.Render(" ▸ ")
 	}
 
 	var line string
 	if sel {
-		line = fmt.Sprintf("%s%s%s%s%s%s%s%s",
-			cursorStyle.Render(" ▸ "),
-			bcPrefix,
-			nameCol.Render(selNameStyle.Render(name)),
-			aliasCell,
-			hostCol.Render(selHostStyle.Render(host)),
-			userCol.Render(selUserStyle.Render(user)),
-			selPortStyle.Render(port),
-			selJumpStyle.Render(jump),
-		)
+		line = cursorLead + bcPrefix +
+			nameCol.Render(selNameStyle.Render(name)) + aliasCell +
+			hostCol.Render(selHostStyle.Render(host)) +
+			userCol.Render(selUserStyle.Render(user)) +
+			selPortStyle.Render(port) +
+			selJumpStyle.Render(jump)
 	} else {
-		line = fmt.Sprintf("   %s%s%s%s%s%s%s",
-			bcPrefix,
-			nameCol.Render(norNameStyle.Render(name)),
-			aliasCell,
-			hostCol.Render(norHostStyle.Render(host)),
-			userCol.Render(norUserStyle.Render(user)),
-			norPortStyle.Render(port),
-			norJumpStyle.Render(jump),
-		)
+		line = cursorLead + bcPrefix +
+			nameCol.Render(norNameStyle.Render(name)) + aliasCell +
+			hostCol.Render(norHostStyle.Render(host)) +
+			userCol.Render(norUserStyle.Render(user)) +
+			norPortStyle.Render(port) +
+			norJumpStyle.Render(jump)
 	}
 
 	if d.health != nil {
@@ -434,4 +351,12 @@ func (d compactDelegate) renderIndexedLeaf(w io.Writer, idx IndexedHost, sel boo
 	}
 
 	fmt.Fprint(w, applyRowHighlight(line, sel, termWidth))
+}
+
+func (d compactDelegate) renderHost(w io.Writer, node *sshw.Node, sel bool, termWidth int) {
+	d.renderHostRow(w, node, sel, termWidth, hostRowOpts{nameDenom: 3})
+}
+
+func (d compactDelegate) renderIndexedLeaf(w io.Writer, idx IndexedHost, sel bool, termWidth int) {
+	d.renderHostRow(w, idx.Node, sel, termWidth, hostRowOpts{breadcrumb: idx.Breadcrumb, nameDenom: 4})
 }

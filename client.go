@@ -19,6 +19,13 @@ import (
 	"golang.org/x/crypto/ssh/terminal"
 )
 
+func parseSigner(pemBytes []byte, passphrase string) (ssh.Signer, error) {
+	if passphrase != "" {
+		return ssh.ParsePrivateKeyWithPassphrase(pemBytes, []byte(passphrase))
+	}
+	return ssh.ParsePrivateKey(pemBytes)
+}
+
 var (
 	DefaultCiphers = []string{
 		"aes128-ctr",
@@ -93,12 +100,7 @@ func setupKeyFileAuth(node *Node) (ssh.AuthMethod, cleanupFunc, error) {
 		return nil, nil, err
 	}
 
-	var signer ssh.Signer
-	if node.Passphrase != "" {
-		signer, err = ssh.ParsePrivateKeyWithPassphrase(bytes, []byte(node.Passphrase))
-	} else {
-		signer, err = ssh.ParsePrivateKey(bytes)
-	}
+	signer, err := parseSigner(bytes, node.Passphrase)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -113,13 +115,7 @@ func setupDefaultKeyAuth(node *Node) (ssh.AuthMethod, cleanupFunc, error) {
 	keyPath := filepath.Join(u.HomeDir, ".ssh/id_rsa")
 	bytes, err := os.ReadFile(keyPath)
 	if err == nil && len(bytes) > 0 {
-		var signer ssh.Signer
-		if node.Passphrase != "" {
-			signer, err = ssh.ParsePrivateKeyWithPassphrase(bytes, []byte(node.Passphrase))
-		} else {
-			signer, err = ssh.ParsePrivateKey(bytes)
-		}
-		if err == nil {
+		if signer, err := parseSigner(bytes, node.Passphrase); err == nil {
 			return ssh.PublicKeys(signer), nil, nil
 		}
 	}
@@ -224,6 +220,7 @@ func (c *defaultClient) Login() {
 	if len(jNodes) > 0 {
 		jNode := jNodes[0]
 		jc := genSSHConfig(jNode)
+		defer jc.close()
 		proxyClient, err := ssh.Dial("tcp", net.JoinHostPort(jNode.Host, strconv.Itoa(jNode.port())), jc.clientConfig)
 		if err != nil {
 			l.Error(err)

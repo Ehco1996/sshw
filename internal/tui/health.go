@@ -1,8 +1,8 @@
 package tui
 
 import (
+	"fmt"
 	"net"
-	"strconv"
 	"strings"
 	"time"
 
@@ -64,11 +64,7 @@ type healthCheckResultMsg struct {
 
 func checkHostCmd(node *sshw.Node, gen int) tea.Cmd {
 	return func() tea.Msg {
-		port := node.Port
-		if port <= 0 {
-			port = 22
-		}
-		addr := net.JoinHostPort(node.Host, strconv.Itoa(port))
+		addr := net.JoinHostPort(node.Host, fmt.Sprintf("%d", node.SSHPort()))
 		start := time.Now()
 		conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 		latency := time.Since(start)
