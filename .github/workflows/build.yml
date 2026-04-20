@@ -41,5 +41,11 @@ jobs:
       - name: Build
         run: go build -v ./cmd/sshw/main.go
 
-      - name: Run tests
-        run: go test -v ./...
+      - name: Test
+        shell: bash
+        run: |
+          if command -v make >/dev/null 2>&1; then
+            make test
+          else
+            go test -count=1 ./...
+          fi
