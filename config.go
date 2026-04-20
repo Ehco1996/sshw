@@ -2,16 +2,14 @@ package sshw
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/user"
-	"path"
+	"path/filepath"
 	"strconv"
 	"time"
 
 	"github.com/atrox/homedir"
 	"github.com/kevinburke/ssh_config"
-	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v2"
 )
 
@@ -76,15 +74,26 @@ func (n *Node) port() int {
 	return n.Port
 }
 
-func (n *Node) password() ssh.AuthMethod {
-	if n.Password == "" {
-		return nil
-	}
-	return ssh.Password(n.Password)
+// EffectiveUser returns User, or "root" when empty (same rule as SSH client config).
+func (n *Node) EffectiveUser() string {
+	return n.user()
 }
 
-func (n *Node) alias() string {
-	return n.Alias
+// SSHPort returns Port, or 22 when unset or non-positive.
+func (n *Node) SSHPort() int {
+	return n.port()
+}
+
+// JumpLabel returns the first jump hop's Name, or Host if Name is empty; empty if there is no jump.
+func (n *Node) JumpLabel() string {
+	if len(n.Jump) == 0 {
+		return ""
+	}
+	j := n.Jump[0]
+	if j.Name != "" {
+		return j.Name
+	}
+	return j.Host
 }
 
 var (
@@ -117,15 +126,31 @@ func LoadConfig() error {
 }
 
 func LoadSshConfig() error {
-	u, err := user.Current()
-	if err != nil {
-		l.Error(err)
-		return nil
+	var p string
+	if ep := os.Getenv("SSHW_SSH_CONFIG_PATH"); ep != "" {
+		p = ep
+	} else {
+		u, err := user.Current()
+		if err != nil {
+			l.Error(err)
+			return err
+		}
+		p = filepath.Join(u.HomeDir, ".ssh", "config")
 	}
-	f, _ := os.Open(path.Join(u.HomeDir, ".ssh/config"))
+	f, err := os.Open(p)
+	if err != nil {
+		if os.IsNotExist(err) {
+			config = nil
+			return nil
+		}
+		return err
+	}
 	defer f.Close()
 
-	cfg, _ := ssh_config.Decode(f)
+	cfg, err := ssh_config.Decode(f)
+	if err != nil {
+		return err
+	}
 	var nc []*Node
 	for _, host := range cfg.Hosts {
 		alias := fmt.Sprintf("%s", host.Patterns[0])
@@ -161,19 +186,22 @@ func LoadConfigBytes(names ...string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	var lastErr error
 	// homedir
 	for i := range names {
-		sshw, err := ioutil.ReadFile(path.Join(u.HomeDir, names[i]))
+		sshw, err := os.ReadFile(filepath.Join(u.HomeDir, names[i]))
 		if err == nil {
 			return sshw, nil
 		}
+		lastErr = err
 	}
 	// relative
 	for i := range names {
-		sshw, err := ioutil.ReadFile(names[i])
+		sshw, err := os.ReadFile(names[i])
 		if err == nil {
 			return sshw, nil
 		}
+		lastErr = err
 	}
-	return nil, err
+	return nil, lastErr
 }

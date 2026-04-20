@@ -19,13 +19,6 @@ var (
 	log = sshw.GetLogger()
 )
 
-func connectableDisplayUser(n *sshw.Node) string {
-	if n.User != "" {
-		return n.User
-	}
-	return "root"
-}
-
 func main() {
 	flag.Parse()
 	if !flag.Parsed() {
@@ -76,7 +69,7 @@ func main() {
 		default:
 			fmt.Fprintf(os.Stderr, "ambiguous name or alias %q (%d matches):\n", token, len(matches))
 			for i, n := range matches {
-				fmt.Fprintf(os.Stderr, "  %d) %s @ %s (%s)\n", i+1, connectableDisplayUser(n), n.Host, n.Name)
+				fmt.Fprintf(os.Stderr, "  %d) %s @ %s (%s)\n", i+1, n.EffectiveUser(), n.Host, n.Name)
 			}
 			os.Exit(1)
 		}

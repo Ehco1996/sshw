@@ -18,7 +18,7 @@ or download binary from [releases](//github.com/yinheli/sshw/releases).
 
 ## config
 
-config file load in following order:
+If `SSHW_CONFIG_PATH` is set to a file path, only that file is tried for the YAML config (see `LoadConfig` in code). Otherwise the config file load order is:
 
 - `~/.sshw`
 - `~/.sshw.yml`
@@ -26,6 +26,12 @@ config file load in following order:
 - `./.sshw`
 - `./.sshw.yml`
 - `./.sshw.yaml`
+
+When using the `-s` flag (read OpenSSH `~/.ssh/config` instead of YAML), the path defaults to `~/.ssh/config`. You can override it with **`SSHW_SSH_CONFIG_PATH`**, for example to point at a non-standard location or a copy for testing:
+
+```bash
+SSHW_SSH_CONFIG_PATH=/path/to/ssh_config sshw -s
+```
 
 config example:
 
