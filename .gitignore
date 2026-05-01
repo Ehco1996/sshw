@@ -19,6 +19,7 @@
 
 # Misc
 /dist
+/.dist
 .idea
 
 !.goreleaser.yml
