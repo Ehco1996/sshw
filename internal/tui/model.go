@@ -109,7 +109,7 @@ func (m *model) activeKeys() modeKeys {
 		}
 		return modeKeys{
 			short: []key.Binding{
-				key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "run")),
+				key.NewBinding(key.WithKeys("y", "enter"), key.WithHelp("y/enter", "run")),
 				key.NewBinding(key.WithKeys("n"), key.WithHelp("n/esc", "edit cmd")),
 			},
 		}
@@ -600,6 +600,10 @@ func (m *model) updateBatchPrompt(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // updateBatchConfirm handles either the simple y/n flow or the
 // typed-override flow when the command is flagged as dangerous.
+// In the safe (non-danger) path, both `y` and `enter` accept — Enter as
+// the affirmative is what most users expect after pressing Enter to
+// leave the prompt. The visible label still leads with `y` to keep the
+// danger gate's typed-confirm flow visually distinct.
 func (m *model) updateBatchConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.batch.dangerous != "" {
 		return m.updateBatchConfirmDanger(msg)
@@ -609,7 +613,7 @@ func (m *model) updateBatchConfirm(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	switch strings.ToLower(km.String()) {
-	case "y":
+	case "y", "enter":
 		return m, m.startBatchRun()
 	case "n", "esc":
 		// Return to the prompt so the user can edit their command rather

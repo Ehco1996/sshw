@@ -82,6 +82,46 @@ func TestDetailTabContent(t *testing.T) {
 	}
 }
 
+func TestBatchConfirm_EnterAccepts(t *testing.T) {
+	t.Parallel()
+	a := &sshw.Node{Name: "a", Host: "1.1.1.1", User: "u"}
+
+	m := newModel([]*sshw.Node{a})
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m.batch.targets = []*sshw.Node{a}
+	m.batch.cmdLine = "uptime"
+	m.batch.dangerous = ""
+	m.mode = modeBatchConfirm
+
+	// Enter on a non-dangerous confirm should transition to running.
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.mode != modeBatchRunning {
+		t.Errorf("Enter on confirm: mode = %v, want modeBatchRunning", m.mode)
+	}
+}
+
+func TestBatchConfirm_DangerEnterRequiresPhrase(t *testing.T) {
+	t.Parallel()
+	a := &sshw.Node{Name: "a", Host: "1.1.1.1", User: "u"}
+
+	m := newModel([]*sshw.Node{a})
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	m.batch.targets = []*sshw.Node{a}
+	m.batch.cmdLine = "rm -rf /var/log"
+	m.batch.dangerous = "rm -rf"
+	m.batch.confirmInput.SetValue("nope")
+	m.mode = modeBatchConfirm
+
+	// Enter with the wrong phrase must NOT start the run.
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if m.mode == modeBatchRunning {
+		t.Errorf("Enter with wrong phrase should not start run")
+	}
+	if !m.batch.confirmFailed {
+		t.Errorf("expected confirmFailed flag to be set after mismatch")
+	}
+}
+
 func TestCancelRunningBatch_FillsPendingAndShowsResults(t *testing.T) {
 	// Not t.Parallel: t.Setenv below is incompatible with parallel tests.
 	a := &sshw.Node{Name: "a", Host: "1.1.1.1"}

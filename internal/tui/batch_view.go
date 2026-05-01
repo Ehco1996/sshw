@@ -77,7 +77,7 @@ func (m *model) renderBatchConfirm() string {
 		confirm = batchPromptStyle.Render("Run on ") +
 			batchCmdStyle.Render(fmt.Sprintf("%d", count)) +
 			batchPromptStyle.Render(" host(s)? ") +
-			batchHintStyle.Render("[y/N]")
+			batchHintStyle.Render("[y/enter to run · n/esc to edit]")
 	}
 
 	header := fmt.Sprintf("about to run on %d host(s):", count)

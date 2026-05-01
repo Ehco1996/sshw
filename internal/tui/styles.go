@@ -1,6 +1,26 @@
 package tui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"os"
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+)
+
+// init honors SSHW_BACKGROUND=light|dark to force lipgloss's adaptive-color
+// detection. Auto-detection (termenv OSC 11 query) fails on many setups —
+// nested tmux, ssh-into-Linux from a light-themed Mac terminal, VS Code's
+// integrated terminal, etc. — and a wrong guess makes the non-cursor rows
+// unreadable (default fg ≈ background). Users hit this in dogfood and the
+// only sane fix is letting them override.
+func init() {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("SSHW_BACKGROUND"))) {
+	case "light":
+		lipgloss.SetHasDarkBackground(false)
+	case "dark":
+		lipgloss.SetHasDarkBackground(true)
+	}
+}
 
 // Adaptive colors for light/dark terminal support
 var (
