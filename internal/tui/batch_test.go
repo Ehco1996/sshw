@@ -50,7 +50,7 @@ func TestRenderResultBadge(t *testing.T) {
 	}
 }
 
-func TestDetailContent(t *testing.T) {
+func TestDetailTabContent(t *testing.T) {
 	t.Parallel()
 	r := sshw.RunResult{
 		Stdout:   []byte("hello\n"),
@@ -58,16 +58,26 @@ func TestDetailContent(t *testing.T) {
 		ExitCode: 2,
 		Duration: 250 * time.Millisecond,
 	}
-	got := stripAnsi(detailContent("uptime", r))
-	for _, want := range []string{"--- stdout ---", "hello", "--- stderr ---", "warn", "exit=2", "duration=250ms"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("detailContent missing %q in:\n%s", want, got)
+
+	if got := stripAnsi(detailTabContent(0, r)); !strings.Contains(got, "hello") {
+		t.Errorf("stdout tab missing 'hello': %q", got)
+	}
+	if got := stripAnsi(detailTabContent(1, r)); !strings.Contains(got, "warn") {
+		t.Errorf("stderr tab missing 'warn': %q", got)
+	}
+	meta := stripAnsi(detailTabContent(2, r))
+	for _, want := range []string{"exit=2", "duration=250ms", "stdout bytes=6", "stderr bytes=4"} {
+		if !strings.Contains(meta, want) {
+			t.Errorf("meta tab missing %q in:\n%s", want, meta)
 		}
 	}
 
 	noOut := sshw.RunResult{ExitCode: 0, Duration: time.Millisecond}
-	if !strings.Contains(stripAnsi(detailContent("ls", noOut)), "(no output)") {
-		t.Errorf("expected (no output) marker for empty result")
+	if got := stripAnsi(detailTabContent(0, noOut)); !strings.Contains(got, "(no stdout)") {
+		t.Errorf("empty stdout tab should hint '(no stdout)'; got %q", got)
+	}
+	if got := stripAnsi(detailTabContent(1, noOut)); !strings.Contains(got, "(no stderr)") {
+		t.Errorf("empty stderr tab should hint '(no stderr)'; got %q", got)
 	}
 }
 

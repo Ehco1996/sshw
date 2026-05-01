@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -41,6 +42,7 @@ type batchState struct {
 	active     bool
 	resultIdx  int
 	spinner    spinner.Model
+	progress   progress.Model
 	input      textinput.Model
 	detail     viewport.Model
 	detailNode *sshw.Node
@@ -68,7 +70,16 @@ type batchState struct {
 	groupView   bool
 	bucketIdx   int
 	bucketHosts []*sshw.Node // hosts of the bucket currently drilled into; non-nil only when in detail-from-bucket
+
+	// Detail-tab state. detailTab indexes detailTabs (stdout=0, stderr=1, meta=2).
+	// detailRes is the result currently being inspected (so tab switches don't
+	// need to re-resolve it from results map). Set on entry to modeBatchDetail.
+	detailTab int
+	detailRes sshw.RunResult
 }
+
+// detailTabs is the ordered list of section labels rendered in the detail tab bar.
+var detailTabs = []string{"stdout", "stderr", "meta"}
 
 func newBatchState() *batchState {
 	s := spinner.New()
@@ -84,9 +95,13 @@ func newBatchState() *batchState {
 	confirm.Placeholder = dangerConfirmPhrase
 	confirm.CharLimit = 64
 
+	pb := progress.New(progress.WithDefaultGradient(), progress.WithoutPercentage())
+	pb.Width = 40 // resized at runtime in syncBatchLayout
+
 	return &batchState{
 		results:      make(map[*sshw.Node]*batchTargetResult),
 		spinner:      s,
+		progress:     pb,
 		input:        in,
 		confirmInput: confirm,
 		sem:          make(chan struct{}, batchParallelism),
@@ -113,6 +128,8 @@ func (b *batchState) reset() {
 	b.groupView = false
 	b.bucketIdx = 0
 	b.bucketHosts = nil
+	b.detailTab = 0
+	b.detailRes = sshw.RunResult{}
 }
 
 // isFailed reports whether r counts as a failure for filter / rerun purposes.

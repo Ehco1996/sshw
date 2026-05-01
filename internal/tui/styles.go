@@ -81,4 +81,12 @@ var (
 				Foreground(colorHealthFail).
 				Bold(true).
 				Underline(true)
+
+	// Detail-view tab bar.
+	detailTabActiveStyle = lipgloss.NewStyle().
+				Foreground(colorPrimary).
+				Bold(true).
+				Underline(true)
+	detailTabInactiveStyle = lipgloss.NewStyle().
+				Foreground(colorDim)
 )

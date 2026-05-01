@@ -86,15 +86,26 @@ func TestBatchFlow_Rendering(t *testing.T) {
 		}
 	}
 
-	// Detail view: drill into host c.
-	m.batch.detailNode = c
-	m.batch.detail.SetContent(detailContent(m.batch.cmdLine, m.batch.results[c].res))
-	m.mode = modeBatchDetail
+	// Detail view: drill into host c. Default tab is stdout but host c
+	// has no stdout — assert the tab bar is rendered and stdout hint shows.
+	m.openDetail(c, nil, m.batch.results[c].res)
 	v = stripAnsi(m.View())
-	for _, want := range []string{"--- stderr ---", "permission denied", "exit=2"} {
+	for _, want := range []string{"stdout", "stderr", "meta", "(no stdout)"} {
 		if !strings.Contains(v, want) {
-			t.Errorf("modeBatchDetail missing %q in:\n%s", want, v)
+			t.Errorf("modeBatchDetail (stdout tab) missing %q in:\n%s", want, v)
 		}
+	}
+	// Switch to stderr tab → should show the error body.
+	m.setDetailTab(1)
+	v = stripAnsi(m.View())
+	if !strings.Contains(v, "permission denied") {
+		t.Errorf("stderr tab missing 'permission denied' in:\n%s", v)
+	}
+	// Switch to meta → exit code present.
+	m.setDetailTab(2)
+	v = stripAnsi(m.View())
+	if !strings.Contains(v, "exit=2") {
+		t.Errorf("meta tab missing 'exit=2' in:\n%s", v)
 	}
 
 	// Group view: toggle on, expect a single bucket holding host a (only ✓).
@@ -109,10 +120,7 @@ func TestBatchFlow_Rendering(t *testing.T) {
 	}
 
 	// Drill into the bucket — header lists hosts.
-	m.batch.bucketHosts = []*sshw.Node{a}
-	m.batch.detailNode = a
-	m.batch.detail.SetContent(detailContent(m.batch.cmdLine, m.batch.results[a].res))
-	m.mode = modeBatchDetail
+	m.openDetail(a, []*sshw.Node{a}, m.batch.results[a].res)
 	v = stripAnsi(m.View())
 	if !strings.Contains(v, "ok") {
 		t.Errorf("bucket detail should show stdout; got:\n%s", v)

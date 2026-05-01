@@ -14,6 +14,12 @@ type keyMap struct {
 	BatchRerunFailed key.Binding
 	BatchFilterFail  key.Binding
 	BatchGroup       key.Binding
+	Help             key.Binding
+
+	// Movement bindings, only surfaced in help; the actual nav keys are
+	// hard-wired in updateBatchResults / list.Model.
+	Up   key.Binding
+	Down key.Binding
 }
 
 var keys = keyMap{
@@ -61,4 +67,27 @@ var keys = keyMap{
 		key.WithKeys("g"),
 		key.WithHelp("g", "group"),
 	),
+	Help: key.NewBinding(
+		key.WithKeys("?"),
+		key.WithHelp("?", "help"),
+	),
+	Up: key.NewBinding(
+		key.WithKeys("up", "k"),
+		key.WithHelp("↑/k", "up"),
+	),
+	Down: key.NewBinding(
+		key.WithKeys("down", "j"),
+		key.WithHelp("↓/j", "down"),
+	),
 }
+
+// modeKeys is a small adapter that satisfies help.KeyMap. We build one
+// at render time per active mode so the help bubble shows the right keys
+// in short and full views.
+type modeKeys struct {
+	short []key.Binding
+	full  [][]key.Binding
+}
+
+func (k modeKeys) ShortHelp() []key.Binding  { return k.short }
+func (k modeKeys) FullHelp() [][]key.Binding { return k.full }

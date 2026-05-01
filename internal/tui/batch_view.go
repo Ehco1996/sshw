@@ -107,8 +107,31 @@ func renderCmdHighlighted(cmd, danger string) string {
 }
 
 // renderBatchRunning renders the per-host progress while commands are running.
+// Layout: command line, an aggregate progress bar with counts, then a
+// row per host (spinner while pending, ✓/✗ exit code once complete).
 func (m *model) renderBatchRunning() string {
 	cmdLine := batchPromptStyle.Render("$ ") + batchCmdStyle.Render(m.batch.cmdLine)
+
+	total, done, ok, fail := m.batch.counts()
+	pending := total - done
+	// in-flight ≤ parallelism cap; we don't track an exact figure (the
+	// semaphore's owner does), so present pending as the upper bound.
+	pct := 0.0
+	if total > 0 {
+		pct = float64(done) / float64(total)
+	}
+	bar := m.batch.progress.ViewAs(pct)
+
+	stats := fmt.Sprintf("%d/%d done", done, total)
+	if ok > 0 {
+		stats += "  " + batchExitOKStyle.Render(fmt.Sprintf("✓ %d", ok))
+	}
+	if fail > 0 {
+		stats += "  " + batchExitFailStyle.Render(fmt.Sprintf("✗ %d", fail))
+	}
+	if pending > 0 {
+		stats += "  " + batchHintStyle.Render(fmt.Sprintf("· %d running", pending))
+	}
 
 	rows := make([]string, 0, len(m.batch.targets))
 	for _, n := range m.batch.targets {
@@ -124,6 +147,9 @@ func (m *model) renderBatchRunning() string {
 
 	body := lipgloss.JoinVertical(lipgloss.Left,
 		cmdLine,
+		"",
+		bar,
+		stats,
 		"",
 		strings.Join(rows, "\n"),
 	)
@@ -311,8 +337,9 @@ func pluralize(word string, n int) string {
 }
 
 // renderBatchDetail shows a single host's full output via the viewport.
-// If the user drilled in from a grouped bucket, the header lists every
-// host in the bucket so they can see who shares this output.
+// Tabbed layout: stdout / stderr / meta. If the user drilled in from a
+// grouped bucket, the header lists every host in the bucket so they can
+// see who shares this output.
 func (m *model) renderBatchDetail() string {
 	n := m.batch.detailNode
 	if n == nil {
@@ -330,95 +357,82 @@ func (m *model) renderBatchDetail() string {
 		headerLines = append(headerLines, batchSectionStyle.Render(renderHostLabel(n)))
 	}
 
+	tabBar := renderDetailTabBar(m.batch.detailTab, m.batch.detailRes)
 	body := lipgloss.JoinVertical(lipgloss.Left,
-		append(append([]string{}, headerLines...), cmdLine, "", m.batch.detail.View())...,
+		append(append([]string{}, headerLines...),
+			cmdLine,
+			"",
+			tabBar,
+			separatorStyle.Render(strings.Repeat("─", m.width)),
+			m.batch.detail.View(),
+		)...,
 	)
 	return m.frame(body)
 }
 
-// detailContent assembles the viewport content for a single host's result.
-func detailContent(cmd string, r sshw.RunResult) string {
-	var b strings.Builder
-	if len(r.Stdout) > 0 {
-		b.WriteString(batchSectionStyle.Render("--- stdout ---") + "\n")
-		b.WriteString(string(r.Stdout))
-		if !strings.HasSuffix(string(r.Stdout), "\n") {
-			b.WriteString("\n")
+// detailTabContent returns the viewport body for a given tab index.
+// Tabs: 0=stdout, 1=stderr, 2=meta. Empty stdout/stderr fall back to a
+// short hint so the user isn't staring at blank space.
+func detailTabContent(tab int, r sshw.RunResult) string {
+	switch tab {
+	case 0:
+		if len(r.Stdout) == 0 {
+			return batchHintStyle.Render("(no stdout)")
 		}
-	}
-	if len(r.Stderr) > 0 {
-		b.WriteString(batchSectionStyle.Render("--- stderr ---") + "\n")
-		b.WriteString(string(r.Stderr))
-		if !strings.HasSuffix(string(r.Stderr), "\n") {
-			b.WriteString("\n")
+		return string(r.Stdout)
+	case 1:
+		if len(r.Stderr) == 0 {
+			return batchHintStyle.Render("(no stderr)")
 		}
+		return string(r.Stderr)
+	case 2:
+		var b strings.Builder
+		fmt.Fprintf(&b, "exit=%d\n", r.ExitCode)
+		fmt.Fprintf(&b, "duration=%s\n", r.Duration.Round(time.Millisecond))
+		if r.Err != nil {
+			fmt.Fprintf(&b, "err=%s\n", r.Err.Error())
+		}
+		fmt.Fprintf(&b, "stdout bytes=%d\nstderr bytes=%d\n", len(r.Stdout), len(r.Stderr))
+		return b.String()
 	}
-	b.WriteString(batchSectionStyle.Render("--- meta ---") + "\n")
-	b.WriteString(fmt.Sprintf("exit=%d  duration=%s",
-		r.ExitCode, r.Duration.Round(time.Millisecond)))
-	if r.Err != nil {
-		b.WriteString("\nerr=" + r.Err.Error())
-	}
-	if len(r.Stdout) == 0 && len(r.Stderr) == 0 {
-		b.WriteString("\n(no output)")
-	}
-	_ = cmd // header already prints the command above the viewport
-	return b.String()
+	return ""
 }
 
-// frame wraps a body with the standard header / separators / batch-help footer.
+// renderDetailTabBar renders "[ stdout ] [ stderr ] [ meta ]" with the
+// active tab highlighted. Each tab also shows a size or status hint to
+// nudge users toward the right tab without switching.
+func renderDetailTabBar(active int, r sshw.RunResult) string {
+	hints := []string{
+		detailTabHint("stdout", len(r.Stdout)),
+		detailTabHint("stderr", len(r.Stderr)),
+		fmt.Sprintf("meta exit=%d", r.ExitCode),
+	}
+	parts := make([]string, len(detailTabs))
+	for i, label := range detailTabs {
+		_ = label
+		body := " " + hints[i] + " "
+		if i == active {
+			parts[i] = detailTabActiveStyle.Render(body)
+		} else {
+			parts[i] = detailTabInactiveStyle.Render(body)
+		}
+	}
+	return strings.Join(parts, batchHintStyle.Render(" "))
+}
+
+func detailTabHint(label string, n int) string {
+	if n == 0 {
+		return label + " ·"
+	}
+	return fmt.Sprintf("%s %d B", label, n)
+}
+
+// frame wraps a body with the standard header / separators / help footer.
+// The footer is rendered via bubbles/help with mode-aware bindings.
 func (m *model) frame(body string) string {
 	header := m.renderHeader()
 	topSep := separatorStyle.Render(strings.Repeat("─", m.width))
 	botSep := separatorStyle.Render(strings.Repeat("─", m.width))
-	help := m.renderBatchHelp()
+	help := m.renderHelp()
 	return lipgloss.JoinVertical(lipgloss.Left, header, topSep, body, botSep, help)
-}
-
-func (m *model) renderBatchHelp() string {
-	var bindings []struct{ key, desc string }
-	switch m.mode {
-	case modeBatchPrompt:
-		bindings = []struct{ key, desc string }{
-			{"enter", "confirm"},
-			{"esc", "cancel"},
-		}
-	case modeBatchConfirm:
-		if m.batch.dangerous != "" {
-			bindings = []struct{ key, desc string }{
-				{"type phrase", "confirm"},
-				{"esc", "edit cmd"},
-			}
-		} else {
-			bindings = []struct{ key, desc string }{
-				{"y", "run"},
-				{"n/esc", "edit cmd"},
-			}
-		}
-	case modeBatchRunning:
-		bindings = []struct{ key, desc string }{
-			{"esc", "cancel"},
-		}
-	case modeBatchResults:
-		bindings = []struct{ key, desc string }{
-			{"↑↓", "nav"},
-			{"enter", "detail"},
-			{"g", "group"},
-			{"f", "filter ✗"},
-			{"r/R", "rerun/failed"},
-			{"esc", "back"},
-		}
-	case modeBatchDetail:
-		bindings = []struct{ key, desc string }{
-			{"↑↓/pgup/pgdn", "scroll"},
-			{"esc", "back"},
-		}
-	default:
-		return m.renderHelp()
-	}
-	parts := make([]string, 0, len(bindings))
-	for _, b := range bindings {
-		parts = append(parts, helpKeyStyle.Render(b.key)+" "+helpDescStyle.Render(b.desc))
-	}
-	return " " + strings.Join(parts, helpDescStyle.Render("  ·  "))
 }

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/help"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -31,6 +32,7 @@ type model struct {
 	cols       *columnWidths
 	health     *healthState
 	batch      *batchState
+	help       help.Model
 	mode       uiMode
 	marks      map[*sshw.Node]struct{}
 	stack      []listState
@@ -65,13 +67,104 @@ func newModel(nodes []*sshw.Node) *model {
 	l.KeyMap.PrevPage.SetKeys("pgup")
 	l.KeyMap.NextPage.SetKeys("pgdown")
 
+	h := help.New()
+	// Adopt the existing palette so help blends with the rest of the UI.
+	h.Styles.ShortKey = helpKeyStyle
+	h.Styles.FullKey = helpKeyStyle
+	h.Styles.ShortDesc = helpDescStyle
+	h.Styles.FullDesc = helpDescStyle
+	h.Styles.ShortSeparator = helpDescStyle
+	h.Styles.FullSeparator = helpDescStyle
+
 	return &model{
 		list:   l,
 		cols:   &cols,
 		health: health,
 		batch:  batch,
+		help:   h,
 		marks:  marks,
 		roots:  nodes,
+	}
+}
+
+// activeKeys returns the help.KeyMap for the current mode. ShortHelp is
+// the one-line footer; FullHelp shows when ? is pressed.
+func (m *model) activeKeys() modeKeys {
+	switch m.mode {
+	case modeBatchPrompt:
+		return modeKeys{
+			short: []key.Binding{
+				key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm")),
+				key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
+			},
+		}
+	case modeBatchConfirm:
+		if m.batch.dangerous != "" {
+			return modeKeys{
+				short: []key.Binding{
+					key.NewBinding(key.WithKeys("enter"), key.WithHelp("type "+dangerConfirmPhrase, "confirm")),
+					key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "edit cmd")),
+				},
+			}
+		}
+		return modeKeys{
+			short: []key.Binding{
+				key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "run")),
+				key.NewBinding(key.WithKeys("n"), key.WithHelp("n/esc", "edit cmd")),
+			},
+		}
+	case modeBatchRunning:
+		return modeKeys{
+			short: []key.Binding{
+				key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
+			},
+		}
+	case modeBatchResults:
+		return modeKeys{
+			short: []key.Binding{
+				keys.Up, keys.Down,
+				keys.Enter,
+				keys.BatchGroup,
+				keys.BatchFilterFail,
+				keys.BatchRerun,
+				keys.BatchRerunFailed,
+				keys.Back,
+				keys.Help,
+			},
+			full: [][]key.Binding{
+				{keys.Up, keys.Down, keys.Enter},
+				{keys.BatchGroup, keys.BatchFilterFail},
+				{keys.BatchRerun, keys.BatchRerunFailed},
+				{keys.Back, keys.Help},
+			},
+		}
+	case modeBatchDetail:
+		return modeKeys{
+			short: []key.Binding{
+				key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "switch tab")),
+				key.NewBinding(key.WithKeys("up", "down", "pgup", "pgdown"), key.WithHelp("↑↓/pgup/pgdn", "scroll")),
+				keys.Back,
+			},
+		}
+	}
+	// modeList default.
+	return modeKeys{
+		short: []key.Binding{
+			keys.Up, keys.Down,
+			keys.Enter,
+			keys.Select,
+			keys.BatchRun,
+			keys.HealthCheck,
+			keys.GlobalPalette,
+			keys.Back,
+			keys.Help,
+		},
+		full: [][]key.Binding{
+			{keys.Up, keys.Down, keys.Enter},
+			{keys.Select, keys.BatchRun},
+			{keys.HealthCheck, keys.GlobalPalette},
+			{keys.Back, keys.Quit, keys.Help},
+		},
 	}
 }
 
@@ -338,6 +431,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *model) updateListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch {
+	case key.Matches(msg, keys.Help):
+		m.help.ShowAll = !m.help.ShowAll
+		return m, nil
+
 	case key.Matches(msg, keys.HealthCheck):
 		if !m.health.active {
 			cmd := m.startHealthCheck()
@@ -541,6 +638,10 @@ func (m *model) updateBatchResults(msg tea.Msg) (tea.Model, tea.Cmd) {
 	buckets := m.visibleBuckets()
 
 	switch {
+	case key.Matches(km, keys.Help):
+		m.help.ShowAll = !m.help.ShowAll
+		return m, nil
+
 	case key.Matches(km, keys.BatchGroup):
 		// Toggle grouped view; cursors stay independent so the user
 		// doesn't lose their place when toggling back.
@@ -619,12 +720,7 @@ func (m *model) updateBatchResults(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.batch.bucketIdx = len(buckets) - 1
 			}
 			bk := buckets[m.batch.bucketIdx]
-			n := bk.hosts[0]
-			m.batch.detailNode = n
-			m.batch.bucketHosts = bk.hosts
-			m.batch.detail.SetContent(detailContent(m.batch.cmdLine, bk.exemplar))
-			m.batch.detail.GotoTop()
-			m.mode = modeBatchDetail
+			m.openDetail(bk.hosts[0], bk.hosts, bk.exemplar)
 			return m, nil
 		}
 		if len(visible) == 0 {
@@ -638,12 +734,7 @@ func (m *model) updateBatchResults(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if r == nil {
 			return m, nil
 		}
-		m.batch.detailNode = n
-		m.batch.bucketHosts = nil
-		content := detailContent(m.batch.cmdLine, r.res)
-		m.batch.detail.SetContent(content)
-		m.batch.detail.GotoTop()
-		m.mode = modeBatchDetail
+		m.openDetail(n, nil, r.res)
 		return m, nil
 	case key.Matches(km, keys.BatchRerun):
 		// Always rerun on the original target set; if the filter shrunk
@@ -692,13 +783,58 @@ func (m *model) failedTargets() []*sshw.Node {
 	return out
 }
 
-// updateBatchDetail forwards scroll keys to the viewport, esc returns to results.
+// openDetail seeds detail-view state and switches mode. bucketHosts is
+// non-nil when drilling in from a grouped bucket so the header can list
+// every host that shares this output.
+func (m *model) openDetail(node *sshw.Node, bucketHosts []*sshw.Node, r sshw.RunResult) {
+	m.batch.detailNode = node
+	m.batch.bucketHosts = bucketHosts
+	m.batch.detailRes = r
+	m.batch.detailTab = 0
+	m.batch.detail.SetContent(detailTabContent(0, r))
+	m.batch.detail.GotoTop()
+	m.mode = modeBatchDetail
+}
+
+// setDetailTab switches the active tab and rewrites the viewport content.
+// Scroll position resets to top so a small stderr doesn't inherit a stdout
+// scroll offset.
+func (m *model) setDetailTab(tab int) {
+	if tab < 0 || tab >= len(detailTabs) {
+		return
+	}
+	m.batch.detailTab = tab
+	m.batch.detail.SetContent(detailTabContent(tab, m.batch.detailRes))
+	m.batch.detail.GotoTop()
+}
+
+// updateBatchDetail handles tab switching, viewport scrolling, and esc.
 func (m *model) updateBatchDetail(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if km, ok := msg.(tea.KeyMsg); ok && km.String() == "esc" {
-		m.batch.detailNode = nil
-		m.batch.bucketHosts = nil
-		m.mode = modeBatchResults
-		return m, nil
+	if km, ok := msg.(tea.KeyMsg); ok {
+		switch km.String() {
+		case "esc":
+			m.batch.detailNode = nil
+			m.batch.bucketHosts = nil
+			m.batch.detailRes = sshw.RunResult{}
+			m.batch.detailTab = 0
+			m.mode = modeBatchResults
+			return m, nil
+		case "tab":
+			m.setDetailTab((m.batch.detailTab + 1) % len(detailTabs))
+			return m, nil
+		case "shift+tab":
+			m.setDetailTab((m.batch.detailTab - 1 + len(detailTabs)) % len(detailTabs))
+			return m, nil
+		case "1":
+			m.setDetailTab(0)
+			return m, nil
+		case "2":
+			m.setDetailTab(1)
+			return m, nil
+		case "3":
+			m.setDetailTab(2)
+			return m, nil
+		}
 	}
 	var cmd tea.Cmd
 	m.batch.detail, cmd = m.batch.detail.Update(msg)
@@ -757,12 +893,13 @@ func (m *model) persistRun() {
 	m.batch.logErr = err
 }
 
-// syncBatchLayout sizes the textinput and viewport to the current window.
+// syncBatchLayout sizes the textinput, progress bar, and viewport to the current window.
 func (m *model) syncBatchLayout() {
 	if m.width <= 0 {
 		return
 	}
 	m.batch.input.Width = max(20, m.width-6)
+	m.batch.progress.Width = max(20, m.width-4)
 
 	bodyH := max(5, m.height-chromeLines-3)
 	if m.batch.detail.Width == 0 || m.batch.detail.Height == 0 {
@@ -891,24 +1028,13 @@ func (m *model) renderRightInfo() string {
 	return strings.Join(parts, "  ")
 }
 
+// renderHelp renders the bottom-bar help via bubbles/help. The active
+// keymap is mode-aware; pressing ? swaps short ↔ full.
 func (m *model) renderHelp() string {
-	bindings := []struct{ key, desc string }{
-		{"↑↓", "nav"},
-		{"enter", "select"},
-		{"space", "mark"},
-		{"ctrl+x", "batch"},
-		{"esc", "back"},
-		{"/", "name or alias"},
-		{"ctrl+k", "global"},
-		{"ctrl+h", "check"},
-		{"q", "quit"},
+	if m.width > 0 {
+		m.help.Width = m.width - 2
 	}
-
-	var parts []string
-	for _, b := range bindings {
-		parts = append(parts, helpKeyStyle.Render(b.key)+" "+helpDescStyle.Render(b.desc))
-	}
-	return " " + strings.Join(parts, helpDescStyle.Render("  ·  "))
+	return " " + m.help.View(m.activeKeys())
 }
 
 // Run starts the TUI and returns the selected node, or nil if the user quit.
