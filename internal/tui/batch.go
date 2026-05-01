@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/charmbracelet/bubbles/progress"
@@ -12,6 +13,12 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/yinheli/sshw"
 )
+
+// errBatchCancelled is the synthetic error stamped on hosts that were
+// pending when the user soft-cancelled a batch run. Distinct from the
+// transport-level "context deadline exceeded" so renderResultBadge can
+// label these hosts "cancelled" instead of "timeout".
+var errBatchCancelled = errors.New("cancelled by user")
 
 const (
 	batchParallelism = 8

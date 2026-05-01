@@ -59,10 +59,13 @@ var (
 	healthCheckingStyle = lipgloss.NewStyle().Foreground(colorDim)
 )
 
-// Selected list row background (full-width bar)
+// Selected list row background (full-width bar). The Light value used to
+// be 254 (near-white), which was effectively invisible on default light
+// terminal backgrounds. Switched to a saturated blue tint that holds
+// contrast on both light and dark themes; inner foreground styles render
+// on top so column colors still come through.
 var selRowStyle = lipgloss.NewStyle().
-	Background(lipgloss.AdaptiveColor{Light: "254", Dark: "236"}).
-	Foreground(colorText)
+	Background(lipgloss.AdaptiveColor{Light: "153", Dark: "24"})
 
 // Batch execution styles (prompt, results, detail)
 var (

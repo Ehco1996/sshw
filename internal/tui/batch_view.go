@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -163,6 +164,8 @@ func renderResultBadge(r sshw.RunResult) string {
 		msg := r.Err.Error()
 		reason := "error"
 		switch {
+		case errors.Is(r.Err, errBatchCancelled):
+			reason = "cancelled"
 		case strings.Contains(msg, "context deadline exceeded") || strings.Contains(msg, "timeout") || strings.Contains(msg, "deadline"):
 			reason = "timeout"
 		case strings.Contains(msg, "refused"):

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/yinheli/sshw"
 )
 
@@ -78,6 +79,51 @@ func TestDetailTabContent(t *testing.T) {
 	}
 	if got := stripAnsi(detailTabContent(1, noOut)); !strings.Contains(got, "(no stderr)") {
 		t.Errorf("empty stderr tab should hint '(no stderr)'; got %q", got)
+	}
+}
+
+func TestCancelRunningBatch_FillsPendingAndShowsResults(t *testing.T) {
+	// Not t.Parallel: t.Setenv below is incompatible with parallel tests.
+	a := &sshw.Node{Name: "a", Host: "1.1.1.1"}
+	b := &sshw.Node{Name: "b", Host: "1.1.1.2"}
+	c := &sshw.Node{Name: "c", Host: "1.1.1.3"}
+
+	m := newModel([]*sshw.Node{a, b, c})
+	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	t.Setenv("SSHW_RUN_LOG_DIR", t.TempDir()) // persistRun() writes here, must not error
+
+	m.batch.targets = []*sshw.Node{a, b, c}
+	m.batch.runStarted = time.Now()
+	m.batch.cmdLine = "ping 8.8.8.8"
+	m.batch.active = true
+	m.mode = modeBatchRunning
+	m.batch.results = map[*sshw.Node]*batchTargetResult{
+		a: {done: true, res: sshw.RunResult{ExitCode: 0, Stdout: []byte("pong\n")}},
+		b: {done: false},
+		c: {done: false},
+	}
+
+	m.cancelRunningBatch()
+
+	if m.mode != modeBatchResults {
+		t.Fatalf("after cancel mode=%v, want modeBatchResults", m.mode)
+	}
+	// Pending hosts should be marked cancelled (not silently dropped).
+	for _, n := range []*sshw.Node{b, c} {
+		r := m.batch.results[n]
+		if r == nil || !r.done {
+			t.Fatalf("pending host %s not marked done after cancel", n.Name)
+		}
+		if !errors.Is(r.res.Err, errBatchCancelled) {
+			t.Errorf("host %s: err = %v, want errBatchCancelled", n.Name, r.res.Err)
+		}
+	}
+	// Completed host's result is preserved.
+	if got := m.batch.results[a].res.ExitCode; got != 0 {
+		t.Errorf("host a exit code clobbered: got %d", got)
+	}
+	if m.batch.flash == "" {
+		t.Errorf("expected a flash hint after cancel")
 	}
 }
 

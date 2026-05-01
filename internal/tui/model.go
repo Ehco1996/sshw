@@ -116,7 +116,7 @@ func (m *model) activeKeys() modeKeys {
 	case modeBatchRunning:
 		return modeKeys{
 			short: []key.Binding{
-				key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
+				key.NewBinding(key.WithKeys("esc", "ctrl+c"), key.WithHelp("esc/ctrl+c", "cancel & show partial")),
 			},
 		}
 	case modeBatchResults:
@@ -147,11 +147,20 @@ func (m *model) activeKeys() modeKeys {
 			},
 		}
 	}
-	// modeList default.
+	// modeList default. Enter's meaning is context-sensitive: marks > 0
+	// flips it from "ssh into selected host" to "start batch flow on
+	// marked hosts" — surface that in help so the change isn't silent.
+	enterBinding := keys.Enter
+	if len(m.marks) > 0 {
+		enterBinding = key.NewBinding(
+			key.WithKeys("enter"),
+			key.WithHelp("enter", fmt.Sprintf("batch (%d marked)", len(m.marks))),
+		)
+	}
 	return modeKeys{
 		short: []key.Binding{
 			keys.Up, keys.Down,
-			keys.Enter,
+			enterBinding,
 			keys.Select,
 			keys.BatchRun,
 			keys.HealthCheck,
@@ -160,7 +169,7 @@ func (m *model) activeKeys() modeKeys {
 			keys.Help,
 		},
 		full: [][]key.Binding{
-			{keys.Up, keys.Down, keys.Enter},
+			{keys.Up, keys.Down, enterBinding},
 			{keys.Select, keys.BatchRun},
 			{keys.HealthCheck, keys.GlobalPalette},
 			{keys.Back, keys.Quit, keys.Help},
@@ -400,6 +409,19 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Top-level ctrl+c: in modeBatchRunning we soft-cancel and let the
+	// user see partial results; everywhere else we quit (matches the
+	// pre-WithoutSignalHandler default behavior so users with ctrl+c
+	// muscle memory aren't surprised).
+	if km, ok := msg.(tea.KeyMsg); ok && km.Type == tea.KeyCtrlC {
+		if m.mode == modeBatchRunning {
+			m.cancelRunningBatch()
+			return m, nil
+		}
+		m.quitting = true
+		return m, tea.Quit
+	}
+
 	// Per-mode input routing.
 	switch m.mode {
 	case modeBatchPrompt:
@@ -465,6 +487,25 @@ func (m *model) updateListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.batch.input.Focus()
 
 	case key.Matches(msg, keys.Enter):
+		// If the user has explicitly marked some hosts, Enter operates on
+		// that working set (start batch flow) rather than logging into the
+		// host under the cursor. Matches the "I marked these for a reason"
+		// mental model and lines up with ctrl+x; only difference is that
+		// ctrl+x also fires on no-marks (uses visible set) while Enter
+		// keeps its original SSH-login meaning when nothing is marked.
+		if len(m.marks) > 0 {
+			targets := m.batchTargets()
+			if len(targets) == 0 {
+				break
+			}
+			m.batch.reset()
+			m.batch.targets = targets
+			m.health.reset()
+			m.mode = modeBatchPrompt
+			m.batch.input.Reset()
+			m.syncBatchLayout()
+			return m, m.batch.input.Focus()
+		}
 		sel := m.list.SelectedItem()
 		if sel == nil {
 			break
@@ -614,17 +655,44 @@ func (m *model) updateBatchConfirmDanger(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // updateBatchRunning handles input while commands are in flight.
-// esc cancels the current run (stops accepting results; in-flight goroutines
-// finish on their own and their messages are discarded by the generation gate).
+// esc / ctrl+c soft-cancel: stop accepting new results, fill any
+// unfinished hosts with a synthetic "cancelled" RunResult, transition
+// to the results view so the user keeps whatever already came back.
+// In-flight goroutines hold their SSH sessions until their per-host
+// timeout fires; their result messages are dropped via generation gate.
 func (m *model) updateBatchRunning(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if km, ok := msg.(tea.KeyMsg); ok && km.String() == "esc" {
-		m.batch.generation++
-		m.batch.active = false
-		m.batch.reset()
-		m.mode = modeList
-		return m, nil
+	if km, ok := msg.(tea.KeyMsg); ok {
+		if km.String() == "esc" || km.Type == tea.KeyCtrlC {
+			m.cancelRunningBatch()
+			return m, nil
+		}
 	}
 	return m, nil
+}
+
+// cancelRunningBatch is the soft-cancel transition used by both esc and
+// ctrl+c during modeBatchRunning. It seals the in-flight run, marks any
+// pending hosts as cancelled, and flips to modeBatchResults so the user
+// can see what already came back instead of losing all output.
+func (m *model) cancelRunningBatch() {
+	m.batch.generation++
+	m.batch.active = false
+	for _, n := range m.batch.targets {
+		r := m.batch.results[n]
+		if r == nil || !r.done {
+			m.batch.results[n] = &batchTargetResult{
+				done: true,
+				res: sshw.RunResult{
+					ExitCode: -1,
+					Err:      errBatchCancelled,
+				},
+			}
+		}
+	}
+	m.batch.flash = "run cancelled — in-flight connections will close on timeout"
+	m.mode = modeBatchResults
+	m.batch.resultIdx = 0
+	m.persistRun()
 }
 
 // updateBatchResults handles cursor movement, drill-down, rerun, and back-out.
@@ -1040,7 +1108,11 @@ func (m *model) renderHelp() string {
 // Run starts the TUI and returns the selected node, or nil if the user quit.
 func Run(nodes []*sshw.Node) (*sshw.Node, error) {
 	m := newModel(nodes)
-	p := tea.NewProgram(m)
+	// WithoutSignalHandler so ctrl+c arrives as a tea.KeyMsg{Type: KeyCtrlC}
+	// and we can route it per-mode (soft-cancel during batch run vs. quit
+	// elsewhere) instead of being unconditionally killed by the default
+	// SIGINT handler.
+	p := tea.NewProgram(m, tea.WithoutSignalHandler())
 	result, err := p.Run()
 	if err != nil {
 		return nil, err
