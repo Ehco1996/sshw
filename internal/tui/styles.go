@@ -7,18 +7,19 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// init honors SSHW_BACKGROUND=light|dark to force lipgloss's adaptive-color
-// detection. Auto-detection (termenv OSC 11 query) fails on many setups —
-// nested tmux, ssh-into-Linux from a light-themed Mac terminal, VS Code's
-// integrated terminal, etc. — and a wrong guess makes the non-cursor rows
-// unreadable (default fg ≈ background). Users hit this in dogfood and the
-// only sane fix is letting them override.
+// Default to a light terminal background. Auto-detection (termenv OSC 11
+// query) is unreliable when sshw runs over an SSH session — the binary
+// can't see the local terminal it's actually rendering to, and a wrong
+// guess makes Dark-variant fg colors land on a light terminal where they
+// vanish. This tool is single-user and the user always uses light
+// terminals; SSHW_BACKGROUND=dark stays as an escape hatch.
 func init() {
+	lipgloss.SetHasDarkBackground(false)
 	switch strings.ToLower(strings.TrimSpace(os.Getenv("SSHW_BACKGROUND"))) {
-	case "light":
-		lipgloss.SetHasDarkBackground(false)
 	case "dark":
 		lipgloss.SetHasDarkBackground(true)
+	case "light":
+		lipgloss.SetHasDarkBackground(false)
 	}
 }
 

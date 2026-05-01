@@ -38,7 +38,7 @@ SSHW_SSH_CONFIG_PATH=/path/to/ssh_config sshw -s
 - `SSHW_CONFIG_PATH` — path to the YAML config; overrides the default search order.
 - `SSHW_SSH_CONFIG_PATH` — path to an OpenSSH-style config when running `sshw -s`.
 - `SSHW_RUN_LOG_DIR` — base directory for batch-run audit logs (see [audit log](#audit-log)). Defaults to `$XDG_STATE_HOME/sshw/runs` or `~/.local/state/sshw/runs`.
-- `SSHW_BACKGROUND` — force the TUI color theme to `light` or `dark` when adaptive detection guesses wrong (common under tmux, ssh-into-Linux from a light Mac terminal, or VS Code's integrated terminal). If non-cursor rows look invisible, set this.
+- `SSHW_BACKGROUND` — the TUI defaults to a **light** terminal palette (auto-detection is unreliable when sshw runs over an SSH session). Set `SSHW_BACKGROUND=dark` to switch.
 
 config example:
 
