@@ -239,14 +239,14 @@ func (d compactDelegate) renderDir(w io.Writer, node *sshw.Node, sel bool, width
 	fmt.Fprint(w, applyRowHighlight(line, sel, width))
 }
 
-func applyRowHighlight(line string, sel bool, termWidth int) string {
+// applyRowHighlight only enforces the truncation guard; selection emphasis
+// is provided by the cursor arrow and the selXxx fg styles on individual
+// cells. See styles.go for why we don't paint a full-width bg bar.
+func applyRowHighlight(line string, _ bool, termWidth int) string {
 	if termWidth > 0 && lipgloss.Width(line) > termWidth {
 		line = truncateWithWidth(line, termWidth)
 	}
-	if !sel || termWidth <= 0 {
-		return line
-	}
-	return selRowStyle.Width(termWidth).Render(line)
+	return line
 }
 
 func truncateWithWidth(s string, maxW int) string {

@@ -79,13 +79,13 @@ var (
 	healthCheckingStyle = lipgloss.NewStyle().Foreground(colorDim)
 )
 
-// Selected list row background (full-width bar). The Light value used to
-// be 254 (near-white), which was effectively invisible on default light
-// terminal backgrounds. Switched to a saturated blue tint that holds
-// contrast on both light and dark themes; inner foreground styles render
-// on top so column colors still come through.
-var selRowStyle = lipgloss.NewStyle().
-	Background(lipgloss.AdaptiveColor{Light: "153", Dark: "24"})
+// Selection is shown via the cursor arrow ("▸") plus bolder/primary-color
+// foreground styles on the selected row's cells (selNameStyle, selHostStyle,
+// etc.). We deliberately do NOT paint a full-width background bar: the
+// bg-bar approach interferes with inner cell styles' SGR resets, producing
+// chunky color blocks ("色块") where padding flips between bg-on and
+// bg-off, and it also depends on accurate light/dark detection that fails
+// in many terminal setups (tmux nesting, ssh-into-Linux, VS Code).
 
 // Batch execution styles (prompt, results, detail)
 var (
