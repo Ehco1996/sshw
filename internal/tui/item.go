@@ -113,6 +113,23 @@ func computeColumns(items []list.Item) columnWidths {
 type compactDelegate struct {
 	cols   *columnWidths
 	health *healthState
+	marks  map[*sshw.Node]struct{}
+}
+
+// markPrefix returns "[x] " / "[ ] " when any host is marked, else "".
+// Selection markers are only shown once the user has actually marked at least
+// one host, to keep the default list view clean.
+func (d compactDelegate) markPrefix(n *sshw.Node) string {
+	if d.marks == nil || len(d.marks) == 0 {
+		return ""
+	}
+	if !n.Connectable() {
+		return "    "
+	}
+	if _, on := d.marks[n]; on {
+		return batchMarkOnStyle.Render("[x] ")
+	}
+	return batchMarkOffStyle.Render("[ ] ")
 }
 
 func (d compactDelegate) Height() int  { return 1 }
@@ -194,6 +211,9 @@ func (d compactDelegate) renderDir(w io.Writer, node *sshw.Node, sel bool, width
 		preview = childPreview(node.Children, previewMaxWidth)
 	}
 
+	mark := d.markPrefix(node)
+	markW := lipgloss.Width(mark)
+
 	var line string
 	if sel {
 		nameStr := selNameStyle.Render(name)
@@ -202,9 +222,9 @@ func (d compactDelegate) renderDir(w io.Writer, node *sshw.Node, sel bool, width
 			mid = selDirPreviewStyle.Render(" · " + preview)
 		}
 		badgeStr := selDirBadgeStyle.Render(badge)
-		usedWidth := 3 + lipgloss.Width(nameStr) + lipgloss.Width(mid) + lipgloss.Width(badgeStr)
+		usedWidth := 3 + markW + lipgloss.Width(nameStr) + lipgloss.Width(mid) + lipgloss.Width(badgeStr)
 		gap := max(0, width-usedWidth)
-		line = cursorStyle.Render(cursor) + nameStr + mid + strings.Repeat(" ", gap) + badgeStr
+		line = cursorStyle.Render(cursor) + mark + nameStr + mid + strings.Repeat(" ", gap) + badgeStr
 	} else {
 		nameStr := norNameStyle.Render(name)
 		var mid string
@@ -212,9 +232,9 @@ func (d compactDelegate) renderDir(w io.Writer, node *sshw.Node, sel bool, width
 			mid = norDirPreviewStyle.Render(" · " + preview)
 		}
 		badgeStr := norDirBadgeStyle.Render(badge)
-		usedWidth := 3 + lipgloss.Width(nameStr) + lipgloss.Width(mid) + lipgloss.Width(badgeStr)
+		usedWidth := 3 + markW + lipgloss.Width(nameStr) + lipgloss.Width(mid) + lipgloss.Width(badgeStr)
 		gap := max(0, width-usedWidth)
-		line = cursor + nameStr + mid + strings.Repeat(" ", gap) + badgeStr
+		line = cursor + mark + nameStr + mid + strings.Repeat(" ", gap) + badgeStr
 	}
 	fmt.Fprint(w, applyRowHighlight(line, sel, width))
 }
@@ -326,17 +346,18 @@ func (d compactDelegate) renderHostRow(w io.Writer, n *sshw.Node, sel bool, term
 	if sel {
 		cursorLead = cursorStyle.Render(" ▸ ")
 	}
+	mark := d.markPrefix(n)
 
 	var line string
 	if sel {
-		line = cursorLead + bcPrefix +
+		line = cursorLead + mark + bcPrefix +
 			nameCol.Render(selNameStyle.Render(name)) + aliasCell +
 			hostCol.Render(selHostStyle.Render(host)) +
 			userCol.Render(selUserStyle.Render(user)) +
 			selPortStyle.Render(port) +
 			selJumpStyle.Render(jump)
 	} else {
-		line = cursorLead + bcPrefix +
+		line = cursorLead + mark + bcPrefix +
 			nameCol.Render(norNameStyle.Render(name)) + aliasCell +
 			hostCol.Render(norHostStyle.Render(host)) +
 			userCol.Render(norUserStyle.Render(user)) +

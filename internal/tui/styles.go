@@ -63,3 +63,22 @@ var (
 var selRowStyle = lipgloss.NewStyle().
 	Background(lipgloss.AdaptiveColor{Light: "254", Dark: "236"}).
 	Foreground(colorText)
+
+// Batch execution styles (prompt, results, detail)
+var (
+	batchMarkOnStyle   = lipgloss.NewStyle().Foreground(colorPrimary).Bold(true)
+	batchMarkOffStyle  = lipgloss.NewStyle().Foreground(colorDim)
+	batchPromptStyle   = lipgloss.NewStyle().Foreground(colorPrimary).Bold(true)
+	batchHintStyle     = lipgloss.NewStyle().Foreground(colorDim)
+	batchExitOKStyle   = lipgloss.NewStyle().Foreground(colorHealthOK).Bold(true)
+	batchExitFailStyle = lipgloss.NewStyle().Foreground(colorHealthFail).Bold(true)
+	batchSectionStyle  = lipgloss.NewStyle().Foreground(colorPrimary).Bold(true)
+	batchMetaStyle     = lipgloss.NewStyle().Foreground(colorDim)
+	batchCmdStyle      = lipgloss.NewStyle().Foreground(colorText).Bold(true)
+
+	// dangerHighlightStyle marks the dangerous substring inside a command.
+	dangerHighlightStyle = lipgloss.NewStyle().
+				Foreground(colorHealthFail).
+				Bold(true).
+				Underline(true)
+)

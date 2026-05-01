@@ -208,14 +208,16 @@ func (c *defaultClient) close() {
 	}
 }
 
-func (c *defaultClient) Login() {
-	defer c.close()
-
+// dial establishes the SSH client connection, transparently routing through the
+// first jump host if configured. The returned client must be closed by the caller.
+//
+// The interactive Login() path passes interactive=true to allow a terminal
+// password fallback when key auth fails; non-interactive callers (RunCommand)
+// pass false so they fail fast instead of blocking on stdin.
+func (c *defaultClient) dial(interactive bool) (*ssh.Client, error) {
 	host := c.node.Host
 	port := strconv.Itoa(c.node.port())
 	jNodes := c.node.Jump
-
-	var client *ssh.Client
 
 	if len(jNodes) > 0 {
 		jNode := jNodes[0]
@@ -223,44 +225,54 @@ func (c *defaultClient) Login() {
 		defer jc.close()
 		proxyClient, err := ssh.Dial("tcp", net.JoinHostPort(jNode.Host, strconv.Itoa(jNode.port())), jc.clientConfig)
 		if err != nil {
-			l.Error(err)
-			return
+			return nil, err
 		}
 		conn, err := proxyClient.Dial("tcp", net.JoinHostPort(host, port))
 		if err != nil {
-			l.Error(err)
-			return
+			proxyClient.Close()
+			return nil, err
 		}
 		ncc, chans, reqs, err := ssh.NewClientConn(conn, net.JoinHostPort(host, port), c.clientConfig)
 		if err != nil {
-			l.Error(err)
-			return
+			proxyClient.Close()
+			return nil, err
 		}
-		client = ssh.NewClient(ncc, chans, reqs)
-	} else {
-		client1, err := ssh.Dial("tcp", net.JoinHostPort(host, port), c.clientConfig)
-		client = client1
-		if err != nil {
-			msg := err.Error()
-			// use terminal password retry
-			if strings.Contains(msg, "no supported methods remain") && !strings.Contains(msg, "password") {
-				fmt.Printf("%s@%s's password:", c.clientConfig.User, host)
-				var b []byte
-				b, err = terminal.ReadPassword(int(syscall.Stdin))
-				if err == nil {
-					p := string(b)
-					if p != "" {
-						c.clientConfig.Auth = append(c.clientConfig.Auth, ssh.Password(p))
-					}
-					fmt.Println()
-					client, err = ssh.Dial("tcp", net.JoinHostPort(host, port), c.clientConfig)
-				}
+		return ssh.NewClient(ncc, chans, reqs), nil
+	}
+
+	client, err := ssh.Dial("tcp", net.JoinHostPort(host, port), c.clientConfig)
+	if err == nil {
+		return client, nil
+	}
+	if !interactive {
+		return nil, err
+	}
+	// Interactive password retry on the terminal.
+	msg := err.Error()
+	if strings.Contains(msg, "no supported methods remain") && !strings.Contains(msg, "password") {
+		fmt.Printf("%s@%s's password:", c.clientConfig.User, host)
+		b, perr := terminal.ReadPassword(int(syscall.Stdin))
+		if perr == nil {
+			p := string(b)
+			if p != "" {
+				c.clientConfig.Auth = append(c.clientConfig.Auth, ssh.Password(p))
 			}
+			fmt.Println()
+			return ssh.Dial("tcp", net.JoinHostPort(host, port), c.clientConfig)
 		}
-		if err != nil {
-			l.Error(err)
-			return
-		}
+	}
+	return nil, err
+}
+
+func (c *defaultClient) Login() {
+	defer c.close()
+
+	host := c.node.Host
+
+	client, err := c.dial(true)
+	if err != nil {
+		l.Error(err)
+		return
 	}
 	defer client.Close()
 
