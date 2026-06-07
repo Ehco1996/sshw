@@ -19,7 +19,7 @@ func TestBatchFlow_Rendering(t *testing.T) {
 	c := &sshw.Node{Name: "c", Host: "10.0.0.3", User: "u"}
 	group := &sshw.Node{Name: "g", Children: []*sshw.Node{a, b, c}}
 
-	m := newModel([]*sshw.Node{group})
+	m := newModel([]*sshw.Node{group}, false)
 	m.Update(tea.WindowSizeMsg{Width: 120, Height: 30})
 
 	// Drill into the group so the visible list is the three hosts.
@@ -127,12 +127,35 @@ func TestBatchFlow_Rendering(t *testing.T) {
 	}
 }
 
-// TestBatchConfirm_Danger ensures the danger banner renders when the
+// TestListView_EditableFooterHelp ensures edit shortcuts stay visible in a
+// single-line footer with a right-aligned edit chip.
+func TestListView_EditableFooterHelp(t *testing.T) {
+	t.Parallel()
+	nodes := []*sshw.Node{
+		{Name: "a", Host: "10.0.0.1", User: "u"},
+		{Name: "b", Host: "10.0.0.2", User: "u"},
+	}
+	m := newModel(nodes, true)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 30})
+
+	v := stripAnsi(m.View())
+	lines := strings.Split(strings.TrimSpace(v), "\n")
+	footer := lines[len(lines)-1]
+	for _, want := range []string{"edit", "a", "e", "y", "d", "^x"} {
+		if !strings.Contains(footer, want) {
+			t.Errorf("editable footer missing %q in last line:\n%s", want, footer)
+		}
+	}
+	if strings.Count(v, "edit") > 1 {
+		t.Errorf("edit chip should appear once in footer; got:\n%s", v)
+	}
+}
+
 // command matches a destructive pattern.
 func TestBatchConfirm_Danger(t *testing.T) {
 	t.Parallel()
 	a := &sshw.Node{Name: "a", Host: "10.0.0.1", User: "u"}
-	m := newModel([]*sshw.Node{a})
+	m := newModel([]*sshw.Node{a}, false)
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 
 	m.batch.targets = []*sshw.Node{a}

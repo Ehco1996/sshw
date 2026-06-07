@@ -9,6 +9,10 @@ type keyMap struct {
 	GlobalPalette    key.Binding
 	HealthCheck      key.Binding
 	Select           key.Binding
+	NodeAdd          key.Binding
+	NodeEdit         key.Binding
+	NodeCopy         key.Binding
+	NodeDelete       key.Binding
 	BatchRun         key.Binding
 	BatchRerun       key.Binding
 	BatchRerunFailed key.Binding
@@ -20,6 +24,12 @@ type keyMap struct {
 	// hard-wired in updateBatchResults / list.Model.
 	Up   key.Binding
 	Down key.Binding
+	Nav  key.Binding
+
+	// Compact labels for the editable-list single-line footer.
+	BatchRunCompact      key.Binding
+	HealthCheckCompact   key.Binding
+	GlobalPaletteCompact key.Binding
 }
 
 var keys = keyMap{
@@ -46,6 +56,22 @@ var keys = keyMap{
 	Select: key.NewBinding(
 		key.WithKeys(" "),
 		key.WithHelp("space", "mark"),
+	),
+	NodeAdd: key.NewBinding(
+		key.WithKeys("a"),
+		key.WithHelp("a", "add"),
+	),
+	NodeEdit: key.NewBinding(
+		key.WithKeys("e"),
+		key.WithHelp("e", "edit"),
+	),
+	NodeCopy: key.NewBinding(
+		key.WithKeys("y"),
+		key.WithHelp("y", "copy"),
+	),
+	NodeDelete: key.NewBinding(
+		key.WithKeys("d"),
+		key.WithHelp("d", "del"),
 	),
 	BatchRun: key.NewBinding(
 		key.WithKeys("ctrl+x"),
@@ -78,6 +104,22 @@ var keys = keyMap{
 	Down: key.NewBinding(
 		key.WithKeys("down", "j"),
 		key.WithHelp("↓/j", "down"),
+	),
+	Nav: key.NewBinding(
+		key.WithKeys("up", "down", "k", "j"),
+		key.WithHelp("↑↓", "move"),
+	),
+	BatchRunCompact: key.NewBinding(
+		key.WithKeys("ctrl+x"),
+		key.WithHelp("^x", "batch"),
+	),
+	HealthCheckCompact: key.NewBinding(
+		key.WithKeys("ctrl+h"),
+		key.WithHelp("^h", "check"),
+	),
+	GlobalPaletteCompact: key.NewBinding(
+		key.WithKeys("ctrl+k"),
+		key.WithHelp("^k", "find"),
 	),
 }
 

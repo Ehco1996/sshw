@@ -1,0 +1,8 @@
+# Flat host list — use: SSHW_CONFIG_PATH=./testdata/flat.yml sshw
+- name: web1
+  host: 10.0.0.1
+  user: deploy
+  port: 22
+- name: web2
+  host: 10.0.0.2
+  user: deploy

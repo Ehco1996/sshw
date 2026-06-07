@@ -75,7 +75,7 @@ func main() {
 		}
 	}
 
-	node, err := tui.Run(sshw.GetConfig())
+	node, err := tui.Run(sshw.GetConfig(), !*S)
 	if err != nil {
 		log.Error("tui error", err)
 		os.Exit(1)

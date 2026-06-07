@@ -1,0 +1,13 @@
+# Nested groups — use: SSHW_CONFIG_PATH=./testdata/nested_groups.yml sshw
+- name: prod
+  children:
+    - name: web
+      host: 10.0.0.1
+      user: root
+    - name: db
+      host: 10.0.0.2
+      user: postgres
+- name: staging
+  children:
+    - name: app
+      host: 192.168.1.10

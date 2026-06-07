@@ -16,10 +16,7 @@ import (
 	"github.com/yinheli/sshw"
 )
 
-const (
-	chromeLines  = 4  // header + sep + body + sep + help
-	maxBodyLines = 28 // cap list height on very tall terminals
-)
+const maxBodyLines = 28 // cap list height on very tall terminals
 
 type listState struct {
 	items  []list.Item
@@ -32,10 +29,12 @@ type model struct {
 	cols       *columnWidths
 	health     *healthState
 	batch      *batchState
+	edit       *editState
 	help       help.Model
 	mode       uiMode
 	marks      map[*sshw.Node]struct{}
 	stack      []listState
+	navStack   []*sshw.Node
 	selected   *sshw.Node
 	quitting   bool
 	width      int
@@ -43,13 +42,16 @@ type model struct {
 	roots      []*sshw.Node
 	globalMode bool
 	preGlobal  *listState
+	editable   bool
+	flash      string
 }
 
-func newModel(nodes []*sshw.Node) *model {
+func newModel(nodes []*sshw.Node, editable bool) *model {
 	items := nodesToListItems(nodesToItems(nodes))
 	cols := computeColumns(items)
 	health := newHealthState()
 	batch := newBatchState()
+	edit := newEditState()
 	marks := make(map[*sshw.Node]struct{})
 
 	delegate := compactDelegate{cols: &cols, health: health, marks: marks}
@@ -77,13 +79,15 @@ func newModel(nodes []*sshw.Node) *model {
 	h.Styles.FullSeparator = helpDescStyle
 
 	return &model{
-		list:   l,
-		cols:   &cols,
-		health: health,
-		batch:  batch,
-		help:   h,
-		marks:  marks,
-		roots:  nodes,
+		list:     l,
+		cols:     &cols,
+		health:   health,
+		batch:    batch,
+		edit:     edit,
+		help:     h,
+		marks:    marks,
+		roots:    nodes,
+		editable: editable,
 	}
 }
 
@@ -146,6 +150,8 @@ func (m *model) activeKeys() modeKeys {
 				keys.Back,
 			},
 		}
+	case modeEditForm, modeEditDeleteConfirm:
+		return m.editActiveKeys()
 	}
 	// modeList default. Enter's meaning is context-sensitive: marks > 0
 	// flips it from "ssh into selected host" to "start batch flow on
@@ -157,24 +163,49 @@ func (m *model) activeKeys() modeKeys {
 			key.WithHelp("enter", fmt.Sprintf("batch (%d marked)", len(m.marks))),
 		)
 	}
-	return modeKeys{
-		short: []key.Binding{
-			keys.Up, keys.Down,
+	full := [][]key.Binding{
+		{keys.Up, keys.Down, enterBinding},
+		{keys.Select, keys.BatchRun},
+		{keys.HealthCheck, keys.GlobalPalette},
+	}
+	if editKeys := m.listEditKeys(); len(editKeys) > 0 {
+		full = append(full, editKeys)
+	}
+	full = append(full, []key.Binding{keys.Back, keys.Quit, keys.Help})
+
+	if editKeys := m.listEditKeys(); len(editKeys) > 0 {
+		// Compact single-line footer; edit keys render as a right-aligned chip.
+		short := []key.Binding{
+			keys.Nav,
 			enterBinding,
 			keys.Select,
-			keys.BatchRun,
-			keys.HealthCheck,
-			keys.GlobalPalette,
+			keys.BatchRunCompact,
+			keys.HealthCheckCompact,
+			keys.GlobalPaletteCompact,
 			keys.Back,
 			keys.Help,
-		},
-		full: [][]key.Binding{
-			{keys.Up, keys.Down, enterBinding},
-			{keys.Select, keys.BatchRun},
-			{keys.HealthCheck, keys.GlobalPalette},
-			{keys.Back, keys.Quit, keys.Help},
-		},
+		}
+		return modeKeys{short: short, full: full}
 	}
+
+	short := []key.Binding{
+		keys.Up, keys.Down,
+		enterBinding,
+		keys.Select,
+		keys.BatchRun,
+		keys.HealthCheck,
+		keys.GlobalPalette,
+		keys.Back,
+		keys.Help,
+	}
+	return modeKeys{short: short, full: full}
+}
+
+func (m *model) listEditKeys() []key.Binding {
+	if !m.editable {
+		return nil
+	}
+	return []key.Binding{keys.NodeAdd, keys.NodeEdit, keys.NodeCopy, keys.NodeDelete}
 }
 
 // nodeForListItem extracts the underlying *sshw.Node from a list item if any.
@@ -267,11 +298,21 @@ func globalPaletteFilter(term string, targets []string) []list.Rank {
 	return list.DefaultFilter(trimmed, targets)
 }
 
+// chromeLines is non-body chrome: header, separators, and help row(s).
+func (m *model) chromeLines() int {
+	return 3 + m.helpLineCount()
+}
+
+// helpLineCount returns how many footer lines the short help occupies.
+func (m *model) helpLineCount() int {
+	return 1
+}
+
 func (m *model) syncLayout() {
 	if m.width <= 0 || m.height <= 0 {
 		return
 	}
-	avail := m.height - chromeLines
+	avail := m.height - m.chromeLines()
 	if avail < 1 {
 		avail = 1
 	}
@@ -359,6 +400,7 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 		m.syncLayout()
 		m.syncBatchLayout()
+		m.syncEditLayout()
 		return m, nil
 
 	case spinner.TickMsg:
@@ -434,6 +476,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateBatchResults(msg)
 	case modeBatchDetail:
 		return m.updateBatchDetail(msg)
+	case modeEditForm:
+		return m.updateEditForm(msg)
+	case modeEditDeleteConfirm:
+		return m.updateEditDeleteConfirm(msg)
 	}
 
 	// modeList (default).
@@ -452,9 +498,11 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) updateListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	m.flash = ""
 	switch {
 	case key.Matches(msg, keys.Help):
 		m.help.ShowAll = !m.help.ShowAll
+		m.syncLayout()
 		return m, nil
 
 	case key.Matches(msg, keys.HealthCheck):
@@ -485,6 +533,36 @@ func (m *model) updateListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.batch.input.Reset()
 		m.syncBatchLayout()
 		return m, m.batch.input.Focus()
+
+	case m.canEditNodes() && key.Matches(msg, keys.NodeAdd):
+		m.flash = ""
+		m.mode = modeEditForm
+		m.syncEditLayout()
+		return m, m.edit.beginCreate()
+
+	case m.canEditNodes() && key.Matches(msg, keys.NodeEdit):
+		n := nodeForListItem(m.list.SelectedItem())
+		if n == nil {
+			return m, nil
+		}
+		m.flash = ""
+		m.mode = modeEditForm
+		m.syncEditLayout()
+		return m, m.edit.beginEdit(n)
+
+	case m.canEditNodes() && key.Matches(msg, keys.NodeDelete):
+		n := nodeForListItem(m.list.SelectedItem())
+		if n == nil {
+			return m, nil
+		}
+		m.flash = ""
+		m.edit.beginDelete(n)
+		m.mode = modeEditDeleteConfirm
+		return m, nil
+
+	case m.canEditNodes() && key.Matches(msg, keys.NodeCopy):
+		m.flash = ""
+		return m, m.copySelectedNode()
 
 	case key.Matches(msg, keys.Enter):
 		// If the user has explicitly marked some hosts, Enter operates on
@@ -525,6 +603,7 @@ func (m *model) updateListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 					cursor: m.list.Index(),
 					title:  m.list.Title,
 				})
+				m.navStack = append(m.navStack, node)
 				childItems := nodesToListItems(nodesToItems(node.Children))
 				cmd := m.setItems(childItems, node.Name)
 				m.list.Select(0)
@@ -549,6 +628,9 @@ func (m *model) updateListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		prev := m.stack[len(m.stack)-1]
 		m.stack = m.stack[:len(m.stack)-1]
+		if len(m.navStack) > 0 {
+			m.navStack = m.navStack[:len(m.navStack)-1]
+		}
 		cmd := m.setItems(prev.items, prev.title)
 		m.list.Select(prev.cursor)
 		m.list.Title = prev.title
@@ -973,7 +1055,7 @@ func (m *model) syncBatchLayout() {
 	m.batch.input.Width = max(20, m.width-6)
 	m.batch.progress.Width = max(20, m.width-4)
 
-	bodyH := max(5, m.height-chromeLines-3)
+	bodyH := max(5, m.height-m.chromeLines()-3)
 	if m.batch.detail.Width == 0 || m.batch.detail.Height == 0 {
 		m.batch.detail = viewport.New(m.width-2, bodyH)
 	} else {
@@ -1001,6 +1083,10 @@ func (m *model) View() string {
 		return m.renderBatchResults()
 	case modeBatchDetail:
 		return m.renderBatchDetail()
+	case modeEditForm:
+		return m.renderEditForm()
+	case modeEditDeleteConfirm:
+		return m.renderEditDeleteConfirm()
 	}
 
 	header := m.renderHeader()
@@ -1089,6 +1175,9 @@ func (m *model) renderRightInfo() string {
 	if n := len(m.marks); n > 0 && m.mode == modeList {
 		parts = append(parts, batchMarkOnStyle.Render(fmt.Sprintf("[%d marked]", n)))
 	}
+	if m.flash != "" {
+		parts = append(parts, batchExitFailStyle.Render(m.flash))
+	}
 	if m.batch.active {
 		total, done, _, _ := m.batch.counts()
 		parts = append(parts,
@@ -1106,12 +1195,50 @@ func (m *model) renderHelp() string {
 	if m.width > 0 {
 		m.help.Width = m.width - 2
 	}
-	return " " + m.help.View(m.activeKeys())
+	km := m.activeKeys()
+	if m.help.ShowAll {
+		return " " + m.help.View(km)
+	}
+	left := m.help.ShortHelpView(km.ShortHelp())
+	if m.mode == modeList && m.editable && len(m.listEditKeys()) > 0 {
+		chip := m.renderEditChip()
+		w := m.width
+		if w <= 0 {
+			w = 80
+		}
+		chipW := lipgloss.Width(chip)
+		avail := w - chipW - 1
+		if avail < 10 {
+			avail = 10
+		}
+		m.help.Width = avail
+		left = m.help.ShortHelpView(km.ShortHelp())
+		line := " " + left
+		gap := w - lipgloss.Width(line) - chipW
+		if gap < 1 {
+			gap = 1
+		}
+		return line + strings.Repeat(" ", gap) + chip
+	}
+	return " " + left
+}
+
+// renderEditChip is a compact right-aligned edit shortcut strip (YAML mode).
+func (m *model) renderEditChip() string {
+	sep := editChipSepStyle.Render("·")
+	keys := strings.Join([]string{
+		editChipKeyStyle.Render("a"),
+		editChipKeyStyle.Render("e"),
+		editChipKeyStyle.Render("y"),
+		editChipKeyStyle.Render("d"),
+	}, sep)
+	return editChipLabelStyle.Render("edit ") + keys
 }
 
 // Run starts the TUI and returns the selected node, or nil if the user quit.
-func Run(nodes []*sshw.Node) (*sshw.Node, error) {
-	m := newModel(nodes)
+// When editable is true, basic node CRUD is available (YAML config mode only).
+func Run(nodes []*sshw.Node, editable bool) (*sshw.Node, error) {
+	m := newModel(nodes, editable)
 	// WithoutSignalHandler so ctrl+c arrives as a tea.KeyMsg{Type: KeyCtrlC}
 	// and we can route it per-mode (soft-cancel during batch run vs. quit
 	// elsewhere) instead of being unconditionally killed by the default

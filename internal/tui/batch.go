@@ -34,6 +34,8 @@ const (
 	modeBatchRunning
 	modeBatchResults
 	modeBatchDetail
+	modeEditForm
+	modeEditDeleteConfirm
 )
 
 type batchTargetResult struct {
