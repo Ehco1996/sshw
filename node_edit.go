@@ -15,10 +15,17 @@ const (
 	EditFieldUser
 	EditFieldPort
 	EditFieldAlias
+	EditFieldKeyPath
+	EditFieldAgentPath
+	EditFieldPassphrase
+	EditFieldPassword
 	EditFieldCount
 )
 
-var editFieldLabels = [...]string{"name", "host", "user", "port", "alias"}
+var editFieldLabels = [...]string{
+	"name", "host", "user", "port", "alias",
+	"keypath", "agentpath", "passphrase", "password",
+}
 
 // EditFieldLabel returns the form label for f.
 func EditFieldLabel(f EditField) string {
@@ -50,20 +57,28 @@ func VisibleEditFields(isGroup bool) []EditField {
 
 // EditFormValues holds raw string values from the TUI edit form.
 type EditFormValues struct {
-	Name  string
-	Host  string
-	User  string
-	Port  string
-	Alias string
+	Name       string
+	Host       string
+	User       string
+	Port       string
+	Alias      string
+	KeyPath    string
+	AgentPath  string
+	Passphrase string
+	Password   string
 }
 
 // NodeToEditFormValues extracts form values from n.
 func NodeToEditFormValues(n *Node) EditFormValues {
 	v := EditFormValues{
-		Name:  n.Name,
-		Host:  n.Host,
-		User:  n.User,
-		Alias: n.Alias,
+		Name:       n.Name,
+		Host:       n.Host,
+		User:       n.User,
+		Alias:      n.Alias,
+		KeyPath:    n.KeyPath,
+		AgentPath:  n.AgentPath,
+		Passphrase: n.Passphrase,
+		Password:   n.Password,
 	}
 	if n.Port > 0 {
 		v.Port = strconv.Itoa(n.Port)
@@ -124,6 +139,10 @@ func ApplyEditForm(values EditFormValues, target *Node, creating, isGroup bool) 
 		n.User = ""
 		n.Port = 0
 		n.Alias = ""
+		n.KeyPath = ""
+		n.AgentPath = ""
+		n.Passphrase = ""
+		n.Password = ""
 		return n, nil
 	}
 
@@ -131,6 +150,10 @@ func ApplyEditForm(values EditFormValues, target *Node, creating, isGroup bool) 
 	n.User = user
 	n.Port = port
 	n.Alias = alias
+	n.KeyPath = strings.TrimSpace(values.KeyPath)
+	n.AgentPath = strings.TrimSpace(values.AgentPath)
+	n.Passphrase = values.Passphrase
+	n.Password = values.Password
 	return n, nil
 }
 

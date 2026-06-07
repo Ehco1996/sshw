@@ -12,12 +12,16 @@ func TestApplyEditForm_createLeaf(t *testing.T) {
 	t.Parallel()
 	n, err := ApplyEditForm(EditFormValues{
 		Name: "web", Host: "10.0.0.1", User: "deploy", Port: "2222", Alias: "w",
+		KeyPath: "~/.ssh/id_ed25519", Passphrase: "sekret", Password: "hunter2",
 	}, nil, true, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if n.Name != "web" || n.Host != "10.0.0.1" || n.User != "deploy" || n.Port != 2222 || n.Alias != "w" {
 		t.Fatalf("unexpected node: %#v", n)
+	}
+	if n.KeyPath != "~/.ssh/id_ed25519" || n.Passphrase != "sekret" || n.Password != "hunter2" {
+		t.Fatalf("auth fields: %#v", n)
 	}
 }
 

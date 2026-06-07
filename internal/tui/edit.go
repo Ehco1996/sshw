@@ -27,9 +27,13 @@ func newEditState() *editState {
 	inputs := make([]textinput.Model, sshw.EditFieldCount)
 	for i := range inputs {
 		in := textinput.New()
-		in.CharLimit = 256
+		in.CharLimit = 512
 		inputs[i] = in
 	}
+	inputs[sshw.EditFieldPassphrase].EchoMode = textinput.EchoPassword
+	inputs[sshw.EditFieldPassword].EchoMode = textinput.EchoPassword
+	inputs[sshw.EditFieldKeyPath].Placeholder = "~/.ssh/id_rsa"
+	inputs[sshw.EditFieldAgentPath].Placeholder = "optional ssh-agent socket"
 	return &editState{inputs: inputs}
 }
 
@@ -85,6 +89,10 @@ func (e *editState) beginEdit(n *sshw.Node) tea.Cmd {
 	e.inputs[sshw.EditFieldUser].SetValue(v.User)
 	e.inputs[sshw.EditFieldPort].SetValue(v.Port)
 	e.inputs[sshw.EditFieldAlias].SetValue(v.Alias)
+	e.inputs[sshw.EditFieldKeyPath].SetValue(v.KeyPath)
+	e.inputs[sshw.EditFieldAgentPath].SetValue(v.AgentPath)
+	e.inputs[sshw.EditFieldPassphrase].SetValue(v.Passphrase)
+	e.inputs[sshw.EditFieldPassword].SetValue(v.Password)
 	if len(n.Children) > 0 {
 		e.inputs[sshw.EditFieldHost].Placeholder = "(group — host ignored)"
 	}
@@ -98,11 +106,15 @@ func (e *editState) beginDelete(n *sshw.Node) {
 
 func (e *editState) formValues() sshw.EditFormValues {
 	return sshw.EditFormValues{
-		Name:  e.inputs[sshw.EditFieldName].Value(),
-		Host:  e.inputs[sshw.EditFieldHost].Value(),
-		User:  e.inputs[sshw.EditFieldUser].Value(),
-		Port:  e.inputs[sshw.EditFieldPort].Value(),
-		Alias: e.inputs[sshw.EditFieldAlias].Value(),
+		Name:       e.inputs[sshw.EditFieldName].Value(),
+		Host:       e.inputs[sshw.EditFieldHost].Value(),
+		User:       e.inputs[sshw.EditFieldUser].Value(),
+		Port:       e.inputs[sshw.EditFieldPort].Value(),
+		Alias:      e.inputs[sshw.EditFieldAlias].Value(),
+		KeyPath:    e.inputs[sshw.EditFieldKeyPath].Value(),
+		AgentPath:  e.inputs[sshw.EditFieldAgentPath].Value(),
+		Passphrase: e.inputs[sshw.EditFieldPassphrase].Value(),
+		Password:   e.inputs[sshw.EditFieldPassword].Value(),
 	}
 }
 
@@ -137,13 +149,6 @@ func (m *model) renderEditForm() string {
 	if e.creating {
 		title = batchSectionStyle.Render("Add node")
 	}
-	hint := batchHintStyle.Render("tab/shift+tab: field · enter: save · esc: cancel")
-	if e.errMsg != "" {
-		hint = batchExitFailStyle.Render(e.errMsg)
-	} else if e.flash != "" {
-		hint = batchHintStyle.Render(e.flash)
-	}
-
 	var rows []string
 	for _, f := range e.visibleFields() {
 		label := sshw.EditFieldLabel(f)
@@ -155,7 +160,13 @@ func (m *model) renderEditForm() string {
 		rows = append(rows, line)
 	}
 
-	body := lipgloss.JoinVertical(lipgloss.Left, title, "", strings.Join(rows, "\n"), "", hint)
+	parts := []string{title, "", strings.Join(rows, "\n")}
+	if e.errMsg != "" {
+		parts = append(parts, "", batchExitFailStyle.Render(e.errMsg))
+	} else if e.flash != "" {
+		parts = append(parts, "", batchHintStyle.Render(e.flash))
+	}
+	body := lipgloss.JoinVertical(lipgloss.Left, parts...)
 	return m.frame(body)
 }
 
@@ -187,7 +198,7 @@ func (m *model) editActiveKeys() modeKeys {
 	default:
 		return modeKeys{
 			short: []key.Binding{
-				key.NewBinding(key.WithKeys("tab", "shift+tab"), key.WithHelp("tab", "field")),
+				key.NewBinding(key.WithKeys("tab", "shift+tab"), key.WithHelp("tab/shift+tab", "field")),
 				key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "save")),
 				key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
 			},
