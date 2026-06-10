@@ -156,3 +156,108 @@ func TestLoadConfigBytes_notFound(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestDefaultConfigSearchPaths_envOverridesDefaults(t *testing.T) {
+	t.Setenv("SSHW_CONFIG_PATH", "./testdata/mixed.yml")
+	got := defaultConfigSearchPaths()
+	if len(got) != 1 || got[0] != "./testdata/mixed.yml" {
+		t.Fatalf("defaultConfigSearchPaths() = %#v, want only env path", got)
+	}
+}
+
+func TestDefaultConfigSearchPaths_defaultsWhenUnset(t *testing.T) {
+	t.Setenv("SSHW_CONFIG_PATH", "")
+	got := defaultConfigSearchPaths()
+	want := []string{".sshw", ".sshw.yml", ".sshw.yaml"}
+	if len(got) != len(want) {
+		t.Fatalf("defaultConfigSearchPaths() = %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("defaultConfigSearchPaths() = %#v, want %#v", got, want)
+		}
+	}
+}
+
+func TestLoadConfig_envPathRelative(t *testing.T) {
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "testdata")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fixture := filepath.Join(sub, "mixed.yml")
+	if err := os.WriteFile(fixture, []byte("- name: lone\n  host: 9.9.9.9\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Chdir(dir)
+	t.Setenv("SSHW_CONFIG_PATH", "./testdata/mixed.yml")
+
+	config = nil
+	configPath = ""
+	if err := LoadConfig(); err != nil {
+		t.Fatal(err)
+	}
+	if len(config) != 1 || config[0].Host != "9.9.9.9" {
+		t.Fatalf("config = %#v, want lone host 9.9.9.9", config)
+	}
+	wantPath, err := filepath.Abs("./testdata/mixed.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ConfigPath() != wantPath {
+		t.Fatalf("ConfigPath = %q, want %q", ConfigPath(), wantPath)
+	}
+}
+
+func TestLoadConfig_repoFixtureMixed(t *testing.T) {
+	fixture := "./testdata/mixed.yml"
+	if _, err := os.Stat(fixture); err != nil {
+		t.Skip("testdata fixture not present")
+	}
+
+	t.Setenv("SSHW_CONFIG_PATH", fixture)
+	config = nil
+	configPath = ""
+	if err := LoadConfig(); err != nil {
+		t.Fatal(err)
+	}
+	if len(config) < 3 {
+		t.Fatalf("expected mixed fixture hosts/groups, got %#v", config)
+	}
+	if config[0].Name != "lone" || config[0].Host != "1.2.3.4" {
+		t.Fatalf("first node = %#v, want lone @ 1.2.3.4", config[0])
+	}
+}
+
+func TestSaveConfig_roundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cfg.yml")
+	t.Setenv("SSHW_CONFIG_PATH", path)
+
+	orig := []*Node{
+		{Name: "a", Host: "1.2.3.4", User: "root", Port: 22},
+		{Name: "g", Children: []*Node{{Name: "b", Host: "5.6.7.8"}}},
+	}
+	config = orig
+	configPath = path
+
+	if err := SaveConfig(); err != nil {
+		t.Fatal(err)
+	}
+
+	config = nil
+	configPath = ""
+	if err := LoadConfig(); err != nil {
+		t.Fatal(err)
+	}
+	if len(config) != 2 {
+		t.Fatalf("len = %d", len(config))
+	}
+	if config[0].Host != "1.2.3.4" || len(config[1].Children) != 1 {
+		t.Fatalf("config = %#v", config)
+	}
+	if ConfigPath() != path {
+		t.Fatalf("ConfigPath = %q", ConfigPath())
+	}
+}

@@ -86,7 +86,7 @@ func TestBatchConfirm_EnterAccepts(t *testing.T) {
 	t.Parallel()
 	a := &sshw.Node{Name: "a", Host: "1.1.1.1", User: "u"}
 
-	m := newModel([]*sshw.Node{a})
+	m := newModel([]*sshw.Node{a}, false)
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	m.batch.targets = []*sshw.Node{a}
 	m.batch.cmdLine = "uptime"
@@ -104,7 +104,7 @@ func TestBatchConfirm_DangerEnterRequiresPhrase(t *testing.T) {
 	t.Parallel()
 	a := &sshw.Node{Name: "a", Host: "1.1.1.1", User: "u"}
 
-	m := newModel([]*sshw.Node{a})
+	m := newModel([]*sshw.Node{a}, false)
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	m.batch.targets = []*sshw.Node{a}
 	m.batch.cmdLine = "rm -rf /var/log"
@@ -128,7 +128,7 @@ func TestCancelRunningBatch_FillsPendingAndShowsResults(t *testing.T) {
 	b := &sshw.Node{Name: "b", Host: "1.1.1.2"}
 	c := &sshw.Node{Name: "c", Host: "1.1.1.3"}
 
-	m := newModel([]*sshw.Node{a, b, c})
+	m := newModel([]*sshw.Node{a, b, c}, false)
 	m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	t.Setenv("SSHW_RUN_LOG_DIR", t.TempDir()) // persistRun() writes here, must not error
 
@@ -173,7 +173,7 @@ func TestFailedTargetsAndFilter(t *testing.T) {
 	b := &sshw.Node{Name: "b", Host: "1.1.1.2"}
 	c := &sshw.Node{Name: "c", Host: "1.1.1.3"}
 
-	m := newModel([]*sshw.Node{a, b, c})
+	m := newModel([]*sshw.Node{a, b, c}, false)
 	m.batch.targets = []*sshw.Node{a, b, c}
 	m.batch.results = map[*sshw.Node]*batchTargetResult{
 		a: {done: true, res: sshw.RunResult{ExitCode: 0}},
@@ -206,7 +206,7 @@ func TestBatchTargets(t *testing.T) {
 	c := &sshw.Node{Name: "c", Host: "1.1.1.3"}
 	group := &sshw.Node{Name: "g", Children: []*sshw.Node{a, b, c}}
 
-	m := newModel([]*sshw.Node{group})
+	m := newModel([]*sshw.Node{group}, false)
 	// Drill into the group so the visible list is [a, b, c].
 	childItems := nodesToListItems(nodesToItems(group.Children))
 	m.list.SetItems(childItems)

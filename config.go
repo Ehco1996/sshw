@@ -97,20 +97,45 @@ func (n *Node) JumpLabel() string {
 }
 
 var (
-	config []*Node
+	config     []*Node
+	configPath string
 )
 
 func GetConfig() []*Node {
 	return config
 }
 
-func LoadConfig() error {
-	var paths []string
-	if envPath := os.Getenv("SSHW_CONFIG_PATH"); envPath != "" {
-		paths = []string{envPath}
+// SetConfig replaces the in-memory config tree (used by the TUI editor).
+func SetConfig(nodes []*Node) {
+	config = nodes
+}
+
+// ConfigPath returns the resolved YAML path from the last LoadConfig, or empty if unset.
+func ConfigPath() string {
+	return configPath
+}
+
+// SaveConfig writes the current config tree to ConfigPath (or the default write path).
+func SaveConfig() error {
+	path := configPath
+	if path == "" {
+		var err error
+		path, err = defaultConfigWritePath()
+		if err != nil {
+			return err
+		}
+		configPath = path
 	}
-	paths = append(paths, ".sshw", ".sshw.yml", ".sshw.yaml")
-	b, err := LoadConfigBytes(paths...)
+	b, err := yaml.Marshal(config)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, b, 0o600)
+}
+
+func LoadConfig() error {
+	paths := defaultConfigSearchPaths()
+	path, b, err := loadConfigFromPaths(paths...)
 	if err != nil {
 		return err
 	}
@@ -121,8 +146,52 @@ func LoadConfig() error {
 	}
 
 	config = c
+	configPath = path
 
 	return nil
+}
+
+func defaultConfigSearchPaths() []string {
+	if envPath := os.Getenv("SSHW_CONFIG_PATH"); envPath != "" {
+		return []string{envPath}
+	}
+	return []string{".sshw", ".sshw.yml", ".sshw.yaml"}
+}
+
+func defaultConfigWritePath() (string, error) {
+	if envPath := os.Getenv("SSHW_CONFIG_PATH"); envPath != "" {
+		return envPath, nil
+	}
+	u, err := user.Current()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(u.HomeDir, ".sshw.yml"), nil
+}
+
+func loadConfigFromPaths(names ...string) (path string, data []byte, err error) {
+	u, err := user.Current()
+	if err != nil {
+		return "", nil, err
+	}
+	for _, name := range names {
+		p := filepath.Join(u.HomeDir, name)
+		b, err := os.ReadFile(p)
+		if err == nil {
+			return p, b, nil
+		}
+	}
+	for _, name := range names {
+		b, err := os.ReadFile(name)
+		if err == nil {
+			abs, absErr := filepath.Abs(name)
+			if absErr != nil {
+				return name, b, nil
+			}
+			return abs, b, nil
+		}
+	}
+	return "", nil, fmt.Errorf("config not found")
 }
 
 func LoadSshConfig() error {
