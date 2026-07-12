@@ -1,7 +1,10 @@
 package sshw
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -273,4 +276,51 @@ func LoadConfigBytes(names ...string) ([]byte, error) {
 		lastErr = err
 	}
 	return nil, lastErr
+}
+
+// LoadDynamicConfig fetches inventory from a dynamic HTTP endpoint
+func LoadDynamicConfig(url string, apiKey string) error {
+	client := &http.Client{Timeout: 15 * time.Second}
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("X-API-KEY", apiKey)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to fetch dynamic config: HTTP %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	err = json.Unmarshal(body, &config)
+	if err != nil {
+		return err
+	}
+
+	// Expand home dir for all nodes recursively just in case
+	var walk func(nodes []*Node)
+	walk = func(nodes []*Node) {
+		for _, n := range nodes {
+			if n.KeyPath != "" {
+				n.KeyPath, _ = homedir.Expand(n.KeyPath)
+			}
+			if n.AgentPath != "" {
+				n.AgentPath, _ = homedir.Expand(n.AgentPath)
+			}
+			walk(n.Children)
+		}
+	}
+	walk(config)
+
+	return nil
 }
