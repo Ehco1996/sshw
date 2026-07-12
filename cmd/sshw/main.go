@@ -15,6 +15,8 @@ var (
 	V     = flag.Bool("version", false, "show version")
 	H     = flag.Bool("help", false, "show help")
 	S     = flag.Bool("s", false, "use local ssh config '~/.ssh/config'")
+	I     = flag.String("i", "", "use dynamic inventory url (e.g., https://.../api/inventory/)")
+	K     = flag.String("k", "", "API key for dynamic inventory (sent as X-API-KEY header)")
 
 	log = sshw.GetLogger()
 )
@@ -37,7 +39,18 @@ func main() {
 		fmt.Println("  go version :", runtime.Version())
 		return
 	}
-	if *S {
+
+	if *I != "" {
+		if *K == "" {
+			fmt.Fprintln(os.Stderr, "-k (API key) is required when using -i")
+			os.Exit(1)
+		}
+		err := sshw.LoadDynamicConfig(*I, *K)
+		if err != nil {
+			log.Error("load dynamic config error", err)
+			os.Exit(1)
+		}
+	} else if *S {
 		err := sshw.LoadSshConfig()
 		if err != nil {
 			log.Error("load ssh config error", err)

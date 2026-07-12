@@ -1,6 +1,8 @@
 package sshw
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
@@ -259,5 +261,48 @@ func TestSaveConfig_roundTrip(t *testing.T) {
 	}
 	if ConfigPath() != path {
 		t.Fatalf("ConfigPath = %q", ConfigPath())
+	}
+}
+
+func TestLoadDynamicConfig(t *testing.T) {
+	t.Parallel()
+	mockResponse := `[
+		{
+			"name": "Group A",
+			"children": [
+				{"name": "node1", "host": "1.1.1.1", "user": "root", "port": 22}
+			]
+		}
+	]`
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-API-KEY") != "test-key" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(mockResponse))
+	}))
+	defer ts.Close()
+
+	// Reset config before test
+	oldConfig := config
+	defer func() { config = oldConfig }()
+
+	err := LoadDynamicConfig(ts.URL, "test-key")
+	if err != nil {
+		t.Fatalf("LoadDynamicConfig failed: %v", err)
+	}
+
+	if len(config) != 1 || config[0].Name != "Group A" {
+		t.Fatalf("unexpected loaded config: %#v", config)
+	}
+	if len(config[0].Children) != 1 || config[0].Children[0].Name != "node1" {
+		t.Fatalf("unexpected child: %#v", config[0].Children)
+	}
+
+	// Test unauthorized
+	err = LoadDynamicConfig(ts.URL, "wrong-key")
+	if err == nil {
+		t.Fatal("expected unauthorized error, got nil")
 	}
 }

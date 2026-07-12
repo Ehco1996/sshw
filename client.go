@@ -72,15 +72,26 @@ func getAgentConn(agentPath string) (net.Conn, error) {
 }
 
 func setupAgentAuth(node *Node) (ssh.AuthMethod, cleanupFunc, error) {
-	if node.AgentPath == "" {
+	agentPath := node.AgentPath
+	if agentPath == "" {
+		agentPath = os.Getenv("SSH_AUTH_SOCK")
+	}
+	if agentPath == "" {
 		return nil, nil, nil
 	}
 
-	conn, err := getAgentConn(node.AgentPath)
+	conn, err := getAgentConn(agentPath)
 	if err != nil {
 		return nil, nil, err
 	}
+	
 	client := agent.NewClient(conn)
+	signers, err := client.Signers()
+	if err != nil || len(signers) == 0 {
+		conn.Close()
+		return nil, nil, nil
+	}
+	
 	return ssh.PublicKeysCallback(client.Signers), func() { conn.Close() }, nil
 }
 
@@ -112,12 +123,19 @@ func setupDefaultKeyAuth(node *Node) (ssh.AuthMethod, cleanupFunc, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	keyPath := filepath.Join(u.HomeDir, ".ssh/id_rsa")
-	bytes, err := os.ReadFile(keyPath)
-	if err == nil && len(bytes) > 0 {
-		if signer, err := parseSigner(bytes, node.Passphrase); err == nil {
-			return ssh.PublicKeys(signer), nil, nil
+	defaultKeys := []string{"id_ed25519", "id_rsa", "id_ecdsa"}
+	var signers []ssh.Signer
+	for _, keyName := range defaultKeys {
+		keyPath := filepath.Join(u.HomeDir, ".ssh", keyName)
+		bytes, err := os.ReadFile(keyPath)
+		if err == nil && len(bytes) > 0 {
+			if signer, err := parseSigner(bytes, node.Passphrase); err == nil {
+				signers = append(signers, signer)
+			}
 		}
+	}
+	if len(signers) > 0 {
+		return ssh.PublicKeys(signers...), nil, nil
 	}
 	return nil, nil, nil
 }
