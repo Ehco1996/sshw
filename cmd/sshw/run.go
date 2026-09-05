@@ -48,7 +48,11 @@ var runCmd = &cobra.Command{
 			} else {
 				fmt.Printf("Matched %d target(s) for %q:\n", len(targets), targetPattern)
 				for _, t := range targets {
-					fmt.Printf("  - %s (%s@%s:%d)\n", t.Name, t.EffectiveUser(), t.Host, t.SSHPort())
+					aliasPart := ""
+					if t.Alias != "" {
+						aliasPart = fmt.Sprintf(" [alias: %s]", t.Alias)
+					}
+					fmt.Printf("  - %s%s (%s@%s:%d)\n", t.Name, aliasPart, t.EffectiveUser(), t.Host, t.SSHPort())
 				}
 			}
 			return nil
@@ -109,7 +113,11 @@ var runCmd = &cobra.Command{
 			if r.Error != "" || r.ExitCode != 0 {
 				badge = "✗"
 			}
-			fmt.Printf("%s  %s (%s) [exit=%d, %dms]\n", badge, r.Name, r.Host, r.ExitCode, r.DurationMs)
+			aliasPart := ""
+			if r.Alias != "" {
+				aliasPart = fmt.Sprintf(" [%s]", r.Alias)
+			}
+			fmt.Printf("%s  %s%s (%s) [exit=%d, %dms]\n", badge, r.Name, aliasPart, r.Host, r.ExitCode, r.DurationMs)
 			if r.Stdout != "" {
 				lines := strings.Split(strings.TrimRight(r.Stdout, "\n"), "\n")
 				for _, l := range lines {
