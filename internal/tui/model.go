@@ -337,7 +337,7 @@ func (m *model) toggleGlobalPalette() tea.Cmd {
 		cursor: m.list.Index(),
 		title:  m.list.Title,
 	}
-	hosts := FlattenLeaves(m.roots)
+	hosts := sshw.FlattenLeaves(m.roots)
 	items := make([]list.Item, len(hosts))
 	for i := range hosts {
 		items[i] = indexedLeafItem{idx: hosts[i]}
@@ -663,7 +663,7 @@ func (m *model) updateBatchPrompt(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.batch.cmdLine = cmd
 			m.batch.input.Blur()
 			// Decide danger gate up front so render & key handling agree.
-			if matched, ok := dangerousMatch(cmd); ok {
+			if matched, ok := sshw.DangerousMatch(cmd); ok {
 				m.batch.dangerous = matched
 				m.batch.confirmInput.Reset()
 				m.batch.confirmFailed = false

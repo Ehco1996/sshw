@@ -48,18 +48,12 @@ func (n *Node) Connectable() bool {
 // FindConnectableByNameOrAlias returns all connectable nodes whose Name or Alias equals token (exact match).
 func FindConnectableByNameOrAlias(nodes []*Node, token string) []*Node {
 	var out []*Node
-	var walk func([]*Node)
-	walk = func(ns []*Node) {
-		for _, n := range ns {
-			if n.Connectable() && (n.Name == token || (n.Alias != "" && n.Alias == token)) {
-				out = append(out, n)
-			}
-			if len(n.Children) > 0 {
-				walk(n.Children)
-			}
+	for _, l := range FlattenLeaves(nodes) {
+		n := l.Node
+		if n.Name == token || (n.Alias != "" && n.Alias == token) {
+			out = append(out, n)
 		}
 	}
-	walk(nodes)
 	return out
 }
 
@@ -136,22 +130,60 @@ func SaveConfig() error {
 	return os.WriteFile(path, b, 0o600)
 }
 
-func LoadConfig() error {
-	paths := defaultConfigSearchPaths()
+// InventoryOptions defines the source and credentials for loading node inventory.
+type InventoryOptions struct {
+	ConfigPath   string // explicit path to YAML config file
+	UseSSHConfig bool   // read from ~/.ssh/config
+	DynamicURL   string // URL to fetch dynamic inventory from
+	DynamicKey   string // API key for dynamic inventory
+}
+
+// LoadInventory loads nodes according to opts and returns the loaded nodes.
+func LoadInventory(opts InventoryOptions) ([]*Node, error) {
+	if opts.DynamicURL != "" {
+		if opts.DynamicKey == "" {
+			return nil, fmt.Errorf("-k (API key) is required when using -i")
+		}
+		if err := LoadDynamicConfig(opts.DynamicURL, opts.DynamicKey); err != nil {
+			return nil, err
+		}
+		return GetConfig(), nil
+	}
+	if opts.UseSSHConfig {
+		if err := LoadSshConfig(); err != nil {
+			return nil, err
+		}
+		return GetConfig(), nil
+	}
+	if opts.ConfigPath != "" {
+		if err := LoadConfigFile(opts.ConfigPath); err != nil {
+			return nil, err
+		}
+		return GetConfig(), nil
+	}
+	if err := LoadConfig(); err != nil {
+		return nil, err
+	}
+	return GetConfig(), nil
+}
+
+// LoadConfigFile loads and parses YAML configuration from the specified search paths.
+func LoadConfigFile(paths ...string) error {
 	path, b, err := loadConfigFromPaths(paths...)
 	if err != nil {
 		return err
 	}
 	var c []*Node
-	err = yaml.Unmarshal(b, &c)
-	if err != nil {
+	if err := yaml.Unmarshal(b, &c); err != nil {
 		return err
 	}
-
 	config = c
 	configPath = path
-
 	return nil
+}
+
+func LoadConfig() error {
+	return LoadConfigFile(defaultConfigSearchPaths()...)
 }
 
 func defaultConfigSearchPaths() []string {
@@ -225,7 +257,7 @@ func LoadSshConfig() error {
 	}
 	var nc []*Node
 	for _, host := range cfg.Hosts {
-		alias := fmt.Sprintf("%s", host.Patterns[0])
+		alias := host.Patterns[0].String()
 		hostName, err := cfg.Get(alias, "HostName")
 		if err != nil {
 			return err

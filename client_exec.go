@@ -35,6 +35,11 @@ func NewRunner(node *Node) Runner {
 	return genSSHConfig(node)
 }
 
+// ExecNode executes cmd against node using NewRunner.
+func ExecNode(ctx context.Context, node *Node, cmd string) RunResult {
+	return NewRunner(node).RunCommand(ctx, cmd)
+}
+
 func (c *defaultClient) RunCommand(ctx context.Context, cmd string) RunResult {
 	defer c.close()
 	start := time.Now()

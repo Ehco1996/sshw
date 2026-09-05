@@ -59,7 +59,6 @@ var (
 	headerTitleStyle = lipgloss.NewStyle().Foreground(colorPrimary).Bold(true)
 	headerPathStyle  = lipgloss.NewStyle().Foreground(colorDim)
 	headerSepStyle   = lipgloss.NewStyle().Foreground(colorPrimary)
-	headerCountStyle = lipgloss.NewStyle().Foreground(colorDim)
 	separatorStyle   = lipgloss.NewStyle().Foreground(colorSubtle)
 	helpKeyStyle       = lipgloss.NewStyle().Foreground(colorPrimary).Bold(true)
 	helpDescStyle      = lipgloss.NewStyle().Foreground(colorDim)

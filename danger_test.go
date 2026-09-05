@@ -1,4 +1,4 @@
-package tui
+package sshw
 
 import "testing"
 
@@ -26,13 +26,13 @@ func TestDangerousMatch(t *testing.T) {
 		{"mv /etc/important /dev/null", "mv /etc/important /dev/null"},
 	}
 	for _, tc := range positive {
-		got, ok := dangerousMatch(tc.cmd)
+		got, ok := DangerousMatch(tc.cmd)
 		if !ok {
 			t.Errorf("expected match for %q, got none", tc.cmd)
 			continue
 		}
 		if got != tc.want {
-			t.Errorf("dangerousMatch(%q) = %q, want %q", tc.cmd, got, tc.want)
+			t.Errorf("DangerousMatch(%q) = %q, want %q", tc.cmd, got, tc.want)
 		}
 	}
 
@@ -44,7 +44,6 @@ func TestDangerousMatch(t *testing.T) {
 		"cat /etc/shadow",
 		// Note: "echo rm -rf" is a known false positive — we don't try to
 		// parse the shell, so any string containing "rm -rf" trips the guard.
-		// Users can press esc and clean up.
 		"git status",
 		"systemctl restart nginx",
 		"ps aux | grep dd",
@@ -53,7 +52,7 @@ func TestDangerousMatch(t *testing.T) {
 		"df -h",
 	}
 	for _, cmd := range negative {
-		if got, ok := dangerousMatch(cmd); ok {
+		if got, ok := DangerousMatch(cmd); ok {
 			t.Errorf("expected no match for %q, got %q", cmd, got)
 		}
 	}
