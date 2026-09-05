@@ -6,6 +6,21 @@
 
 ---
 
+## 核心工程原则 (Core Discipline)
+
+- **单一事实来源 (SSOT)**：
+  - 目标解析逻辑由 `target.go` 独占，任何 CLI 或 TUI 逻辑严禁私自解析节点别名或标签。
+  - 节点信息脱敏与对外导出以 `node_info.go` 为唯一视图。
+  - 主机树状层级与展平规则以 `flatten.go` 为单一事实。
+- **拥抱社区成熟库，拒绝造轮子**：
+  - 底层 SSH 协议全面依托 `golang.org/x/crypto/ssh`；
+  - 终端交互与渲染使用 Charm 家族（`bubbletea`、`bubbles`、`lipgloss`）；
+  - CLI 参数与命令编排使用 `spf13/cobra`；并发调度基于 `golang.org/x/sync/errgroup`。
+  - 严禁自行手写 ANSI 转义码解析器、自制并发线程池或手写 OpenSSH 替代语法解析。
+
+
+---
+
 ## 项目定位与核心特性
 
 1. **多源资产清单管理 (Inventory Management)**：
