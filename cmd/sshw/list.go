@@ -14,7 +14,7 @@ import (
 var listAsJSON bool
 
 var listCmd = &cobra.Command{
-	Use:   "list",
+	Use:   "list [target]",
 	Short: "List configured hosts",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		nodes, err := loadNodes()
@@ -22,7 +22,11 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
-		infos := sshw.ListNodeInfos(nodes)
+		pattern := ""
+		if len(args) > 0 {
+			pattern = args[0]
+		}
+		infos := sshw.FilterNodeInfos(nodes, pattern)
 
 		if listAsJSON {
 			data, err := json.MarshalIndent(infos, "", "  ")

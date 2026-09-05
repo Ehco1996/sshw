@@ -39,10 +39,7 @@ var runCmd = &cobra.Command{
 
 		if dryRun {
 			if runAsJSON {
-				infos := make([]sshw.NodeInfo, len(targets))
-				for idx, t := range targets {
-					infos[idx] = sshw.BuildNodeInfo(t, nil)
-				}
+				infos := sshw.FilterNodeInfos(nodes, targetPattern)
 				data, _ := json.MarshalIndent(infos, "", "  ")
 				fmt.Println(string(data))
 			} else {

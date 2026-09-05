@@ -16,7 +16,7 @@ import (
 	"github.com/atrox/homedir"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
-	"golang.org/x/crypto/ssh/terminal"
+	"golang.org/x/term"
 )
 
 func parseSigner(pemBytes []byte, passphrase string) (ssh.Signer, error) {
@@ -150,7 +150,7 @@ func setupPasswordAuth(node *Node) (ssh.AuthMethod, cleanupFunc, error) {
 func setupKeyboardAuth(node *Node) (ssh.AuthMethod, cleanupFunc, error) {
 	return ssh.KeyboardInteractive(func(user, instruction string, questions []string, echos []bool) ([]string, error) {
 		answers := make([]string, 0, len(questions))
-		for i, _ := range questions {
+		for i := range questions {
 			if echos[i] {
 				scan := bufio.NewScanner(os.Stdin)
 				if scan.Scan() {
@@ -161,7 +161,7 @@ func setupKeyboardAuth(node *Node) (ssh.AuthMethod, cleanupFunc, error) {
 					return nil, err
 				}
 			} else {
-				b, err := terminal.ReadPassword(int(syscall.Stdin))
+				b, err := term.ReadPassword(int(syscall.Stdin))
 				if err != nil {
 					return nil, err
 				}
@@ -269,7 +269,7 @@ func (c *defaultClient) dial(interactive bool) (*ssh.Client, error) {
 	msg := err.Error()
 	if strings.Contains(msg, "no supported methods remain") && !strings.Contains(msg, "password") {
 		fmt.Printf("%s@%s's password:", c.clientConfig.User, host)
-		b, perr := terminal.ReadPassword(int(syscall.Stdin))
+		b, perr := term.ReadPassword(int(syscall.Stdin))
 		if perr == nil {
 			p := string(b)
 			if p != "" {
@@ -304,16 +304,18 @@ func (c *defaultClient) Login() {
 	defer session.Close()
 
 	fd := int(os.Stdin.Fd())
-	state, err := terminal.MakeRaw(fd)
+	state, err := term.MakeRaw(fd)
 	if err != nil {
 		l.Error(err)
 		return
 	}
-	defer terminal.Restore(fd, state)
+	defer func() {
+		_ = term.Restore(fd, state)
+	}()
 
-	//changed fd to int(os.Stdout.Fd()) because terminal.GetSize(fd) doesn't work in Windows
-	//reference: https://github.com/golang/go/issues/20388
-	w, h, err := terminal.GetSize(int(os.Stdout.Fd()))
+	// changed fd to int(os.Stdout.Fd()) because term.GetSize(fd) doesn't work in Windows
+	// reference: https://github.com/golang/go/issues/20388
+	w, h, err := term.GetSize(int(os.Stdout.Fd()))
 
 	if err != nil {
 		l.Error(err)
@@ -349,7 +351,7 @@ func (c *defaultClient) Login() {
 	for i := range c.node.CallbackShells {
 		shell := c.node.CallbackShells[i]
 		time.Sleep(shell.Delay * time.Millisecond)
-		stdinPipe.Write([]byte(shell.Cmd + "\r"))
+		_, _ = stdinPipe.Write([]byte(shell.Cmd + "\r"))
 	}
 
 	// change stdin to user
@@ -367,7 +369,7 @@ func (c *defaultClient) Login() {
 			oh = h
 		)
 		for {
-			cw, ch, err := terminal.GetSize(fd)
+			cw, ch, err := term.GetSize(fd)
 			if err != nil {
 				break
 			}
@@ -388,9 +390,9 @@ func (c *defaultClient) Login() {
 	go func() {
 		for {
 			time.Sleep(time.Second * 10)
-			client.SendRequest("keepalive@openssh.com", false, nil)
+			_, _, _ = client.SendRequest("keepalive@openssh.com", false, nil)
 		}
 	}()
 
-	session.Wait()
+	_ = session.Wait()
 }

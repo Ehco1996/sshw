@@ -1,5 +1,7 @@
 package sshw
 
+import "strings"
+
 // NodeInfo is a sanitized representation of a connectable node for public listing and serialization.
 // It deliberately omits all credentials (password, passphrase, keypath, etc.).
 type NodeInfo struct {
@@ -31,6 +33,31 @@ func ListNodeInfos(roots []*Node) []NodeInfo {
 	out := make([]NodeInfo, len(leaves))
 	for i, l := range leaves {
 		out[i] = BuildNodeInfo(l.Node, l.Path)
+	}
+	return out
+}
+
+// FilterNodeInfos returns NodeInfo for nodes matching targetPattern, retaining their full tree path.
+func FilterNodeInfos(roots []*Node, targetPattern string) []NodeInfo {
+	targetPattern = strings.TrimSpace(targetPattern)
+	if targetPattern == "" {
+		return ListNodeInfos(roots)
+	}
+	matched := MatchTargets(roots, targetPattern)
+	if len(matched) == 0 {
+		return nil
+	}
+	matchedSet := make(map[*Node]struct{}, len(matched))
+	for _, m := range matched {
+		matchedSet[m] = struct{}{}
+	}
+
+	leaves := FlattenLeaves(roots)
+	var out []NodeInfo
+	for _, l := range leaves {
+		if _, ok := matchedSet[l.Node]; ok {
+			out = append(out, BuildNodeInfo(l.Node, l.Path))
+		}
 	}
 	return out
 }

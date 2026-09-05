@@ -120,7 +120,7 @@ type compactDelegate struct {
 // Selection markers are only shown once the user has actually marked at least
 // one host, to keep the default list view clean.
 func (d compactDelegate) markPrefix(n *sshw.Node) string {
-	if d.marks == nil || len(d.marks) == 0 {
+	if len(d.marks) == 0 {
 		return ""
 	}
 	if !n.Connectable() {

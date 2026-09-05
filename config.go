@@ -156,16 +156,9 @@ func LoadInventory(opts InventoryOptions) ([]*Node, error) {
 		return GetConfig(), nil
 	}
 	if opts.ConfigPath != "" {
-		path, b, err := loadConfigFromPaths(opts.ConfigPath)
-		if err != nil {
+		if err := LoadConfigFile(opts.ConfigPath); err != nil {
 			return nil, err
 		}
-		var c []*Node
-		if err := yaml.Unmarshal(b, &c); err != nil {
-			return nil, err
-		}
-		config = c
-		configPath = path
 		return GetConfig(), nil
 	}
 	if err := LoadConfig(); err != nil {
@@ -174,22 +167,23 @@ func LoadInventory(opts InventoryOptions) ([]*Node, error) {
 	return GetConfig(), nil
 }
 
-func LoadConfig() error {
-	paths := defaultConfigSearchPaths()
+// LoadConfigFile loads and parses YAML configuration from the specified search paths.
+func LoadConfigFile(paths ...string) error {
 	path, b, err := loadConfigFromPaths(paths...)
 	if err != nil {
 		return err
 	}
 	var c []*Node
-	err = yaml.Unmarshal(b, &c)
-	if err != nil {
+	if err := yaml.Unmarshal(b, &c); err != nil {
 		return err
 	}
-
 	config = c
 	configPath = path
-
 	return nil
+}
+
+func LoadConfig() error {
+	return LoadConfigFile(defaultConfigSearchPaths()...)
 }
 
 func defaultConfigSearchPaths() []string {
@@ -263,7 +257,7 @@ func LoadSshConfig() error {
 	}
 	var nc []*Node
 	for _, host := range cfg.Hosts {
-		alias := fmt.Sprintf("%s", host.Patterns[0])
+		alias := host.Patterns[0].String()
 		hostName, err := cfg.Get(alias, "HostName")
 		if err != nil {
 			return err

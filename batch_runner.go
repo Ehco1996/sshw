@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"golang.org/x/sync/errgroup"
 )
 
 var ErrDangerousCommand = errors.New("dangerous command detected")
@@ -79,17 +81,14 @@ func RunBatch(ctx context.Context, targets []*Node, cmd string, opts BatchOption
 	rawMap := make(map[*Node]RunResult, total)
 	var rawMapMu sync.Mutex
 
-	sem := make(chan struct{}, concurrency)
-	var wg sync.WaitGroup
+	var g errgroup.Group
+	g.SetLimit(concurrency)
 
 	for i, t := range targets {
-		wg.Add(1)
-		go func(idx int, node *Node) {
-			defer wg.Done()
-			select {
-			case sem <- struct{}{}:
-				defer func() { <-sem }()
-			case <-ctx.Done():
+		idx := i
+		node := t
+		g.Go(func() error {
+			if ctx.Err() != nil {
 				results[idx] = TargetExecutionResult{
 					Node:     node,
 					Name:     node.Name,
@@ -101,7 +100,7 @@ func RunBatch(ctx context.Context, targets []*Node, cmd string, opts BatchOption
 				rawMapMu.Lock()
 				rawMap[node] = RunResult{ExitCode: -1, Err: ctx.Err()}
 				rawMapMu.Unlock()
-				return
+				return nil
 			}
 
 			subCtx, cancel := context.WithTimeout(ctx, timeout)
@@ -130,10 +129,11 @@ func RunBatch(ctx context.Context, targets []*Node, cmd string, opts BatchOption
 			rawMapMu.Lock()
 			rawMap[node] = res
 			rawMapMu.Unlock()
-		}(i, t)
+			return nil
+		})
 	}
 
-	wg.Wait()
+	_ = g.Wait()
 	finished := time.Now()
 
 	var okCount, failCount int

@@ -23,25 +23,28 @@
 
 ## 阶段细分与追踪
 
-### Phase 1: CLI 架构现代化（基于 Cobra） 🚀 [In Progress]
+### Phase 1: CLI 架构现代化（基于 Cobra） ✅ [Completed]
 > 目标：消除手写的参数解析循环与 Flag 散落，全面接入 Go 社区事实标准的 CLI 框架 `spf13/cobra`。
 
 - [x] 抽离核心逻辑并完成 SSOT 重构（`FlattenLeaves`, `LoadInventory`, `MatchTargets`）。
-- [ ] 引入依赖 `github.com/spf13/cobra`。
-- [ ] 构建 `rootCmd`，定义 `PersistentFlags`（`-s`, `-i`, `-k`）自动下发到所有子命令。
-- [ ] 子命令重构：
-  - `sshw list [--json]`
+- [x] 引入依赖 `github.com/spf13/cobra`。
+- [x] 构建 `rootCmd`，定义 `PersistentFlags`（`--config`, `-s`, `-i`, `-k`）自动下发到所有子命令。
+- [x] 子命令重构：
+  - `sshw list [target] [--json]`
   - `sshw run [flags] <target> <command>`（含别名 `exec`，支持 `--dry-run`, `-c`, `-t`, `-f`）
   - 默认无子命令行为：单参数直连指定节点，无参数开启 TUI。
-- [ ] 完备的单元测试与回归测试验证。
-- [ ] 提交并创建 Draft PR。
+- [x] 完备的单元测试与回归测试验证。
+- [x] 提交并创建 Draft PR (#7)。
 
-### Phase 2: 并发调度引擎优化（基于 `errgroup`） ⏳ [Planned]
-> 目标：使用 Go 官方扩展库现代化并发控制，消除手写信号量与锁。
+### Phase 2: 并发调度引擎与代码精简（基于 `errgroup`） ✅ [Completed]
+> 目标：使用 Go 官方扩展库现代化并发控制，消除手写信号量与锁，消除废弃 API 与冗余逻辑。
 
-- [ ] 引入 `golang.org/x/sync/errgroup`。
-- [ ] 使用 `errgroup.Group.SetLimit(concurrency)` 替换 `batch_runner.go` 中的通道信号量 `sem` 和 `sync.WaitGroup`。
-- [ ] 优化 context 超时与取消机制，防止慢连接资源泄漏。
+- [x] 引入 `golang.org/x/sync/errgroup`。
+- [x] 使用 `errgroup.Group.SetLimit(concurrency)` 替换 `batch_runner.go` 中的通道信号量 `sem` 和 `sync.WaitGroup`。
+- [x] 迁移废弃的 `golang.org/x/crypto/ssh/terminal` 到 `golang.org/x/term`。
+- [x] 消除所有 `golangci-lint` 警告（S1005, S1009, S1025, errcheck, unused）。
+- [x] 抽象 `FilterNodeInfos` 保持节点树层级面包屑路径（`Path`）归一。
+- [x] 统一 `LoadConfigFile` 清除配置文件加载重复逻辑。
 
 ### Phase 3: 内置 MCP (Model Context Protocol) 协议服务 ⏳ [Planned]
 > 目标：让 `sshw` 成为无本地 Bash 权限 Agent（如 Claude Desktop / Cherry Studio）的原生工具服务。

@@ -56,3 +56,58 @@ func TestListNodeInfos(t *testing.T) {
 		t.Fatalf("JSON leaked credentials: %s", raw)
 	}
 }
+
+func TestFilterNodeInfos(t *testing.T) {
+	roots := []*Node{
+		{
+			Name:  "lone",
+			Alias: "l",
+			Host:  "1.2.3.4",
+		},
+		{
+			Name: "cluster",
+			Children: []*Node{
+				{
+					Name:  "node-a",
+					Alias: "na",
+					Host:  "10.0.0.1",
+				},
+				{
+					Name:  "node-b",
+					Alias: "nb",
+					Host:  "10.0.0.2",
+				},
+			},
+		},
+	}
+
+	// 1. Empty pattern returns all
+	all := FilterNodeInfos(roots, "")
+	if len(all) != 3 {
+		t.Fatalf("expected 3, got %d", len(all))
+	}
+
+	// 2. Filter by group name preserves Path
+	groupInfos := FilterNodeInfos(roots, "cluster")
+	if len(groupInfos) != 2 {
+		t.Fatalf("expected 2 in cluster, got %d", len(groupInfos))
+	}
+	if groupInfos[0].Name != "node-a" || len(groupInfos[0].Path) != 1 || groupInfos[0].Path[0] != "cluster" {
+		t.Errorf("expected node-a under cluster, got %+v", groupInfos[0])
+	}
+	if groupInfos[1].Name != "node-b" || len(groupInfos[1].Path) != 1 || groupInfos[1].Path[0] != "cluster" {
+		t.Errorf("expected node-b under cluster, got %+v", groupInfos[1])
+	}
+
+	// 3. Filter by alias
+	aliasInfos := FilterNodeInfos(roots, "l")
+	if len(aliasInfos) != 1 || aliasInfos[0].Name != "lone" {
+		t.Errorf("expected lone, got %+v", aliasInfos)
+	}
+
+	// 4. Non-matching pattern returns empty
+	emptyInfos := FilterNodeInfos(roots, "nonexistent")
+	if len(emptyInfos) != 0 {
+		t.Errorf("expected empty, got %+v", emptyInfos)
+	}
+}
