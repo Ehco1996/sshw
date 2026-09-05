@@ -7,19 +7,11 @@ import (
 
 // GetAllConnectable returns all leaf nodes in tree order that can be connected to.
 func GetAllConnectable(roots []*Node) []*Node {
-	var out []*Node
-	var walk func([]*Node)
-	walk = func(nodes []*Node) {
-		for _, n := range nodes {
-			if n.Connectable() {
-				out = append(out, n)
-			}
-			if len(n.Children) > 0 {
-				walk(n.Children)
-			}
-		}
+	leaves := FlattenLeaves(roots)
+	out := make([]*Node, len(leaves))
+	for i, l := range leaves {
+		out[i] = l.Node
 	}
-	walk(roots)
 	return out
 }
 
@@ -28,20 +20,7 @@ func CollectConnectableLeaves(node *Node) []*Node {
 	if node.Connectable() {
 		return []*Node{node}
 	}
-	var out []*Node
-	var walk func([]*Node)
-	walk = func(nodes []*Node) {
-		for _, n := range nodes {
-			if n.Connectable() {
-				out = append(out, n)
-			}
-			if len(n.Children) > 0 {
-				walk(n.Children)
-			}
-		}
-	}
-	walk(node.Children)
-	return out
+	return GetAllConnectable(node.Children)
 }
 
 // MatchTargets resolves a target pattern string into a deduplicated list of connectable leaf nodes.
@@ -93,6 +72,12 @@ func matchSingleTarget(roots []*Node, pattern string) []*Node {
 		return all
 	}
 
+	// 1. Check exact matches on leaf nodes (Name or Alias) using FindConnectableByNameOrAlias (SSOT)
+	exact := FindConnectableByNameOrAlias(roots, pattern)
+	if len(exact) > 0 {
+		return exact
+	}
+
 	var matched []*Node
 	seen := make(map[*Node]struct{})
 	add := func(n *Node) {
@@ -100,16 +85,6 @@ func matchSingleTarget(roots []*Node, pattern string) []*Node {
 			seen[n] = struct{}{}
 			matched = append(matched, n)
 		}
-	}
-
-	// 1. Check exact matches on leaf nodes (Name or Alias)
-	for _, n := range all {
-		if n.Name == pattern || (n.Alias != "" && n.Alias == pattern) {
-			add(n)
-		}
-	}
-	if len(matched) > 0 {
-		return matched
 	}
 
 	// 2. Check exact matches on group nodes

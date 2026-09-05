@@ -12,26 +12,22 @@ import (
 	"github.com/yinheli/sshw"
 )
 
-func runExec(args []string) {
+func runExec(nodes []*sshw.Node, args []string) {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	asJSON := fs.Bool("json", false, "output summary in JSON format")
 	dryRun := fs.Bool("dry-run", false, "list matched targets without executing")
 
 	var concurrency int
-	fs.IntVar(&concurrency, "c", 8, "max concurrent connections")
-	fs.IntVar(&concurrency, "concurrency", 8, "max concurrent connections")
+	fs.IntVar(&concurrency, "c", sshw.DefaultBatchConcurrency, "max concurrent connections")
+	fs.IntVar(&concurrency, "concurrency", sshw.DefaultBatchConcurrency, "max concurrent connections")
 
 	var timeout time.Duration
-	fs.DurationVar(&timeout, "t", 30*time.Second, "per-host timeout")
-	fs.DurationVar(&timeout, "timeout", 30*time.Second, "per-host timeout")
+	fs.DurationVar(&timeout, "t", sshw.DefaultBatchTimeout, "per-host timeout")
+	fs.DurationVar(&timeout, "timeout", sshw.DefaultBatchTimeout, "per-host timeout")
 
 	var force bool
 	fs.BoolVar(&force, "f", false, "allow execution of dangerous commands")
 	fs.BoolVar(&force, "force", false, "allow execution of dangerous commands")
-
-	useSsh := fs.Bool("s", false, "use local ssh config '~/.ssh/config'")
-	invURL := fs.String("i", "", "dynamic inventory url")
-	invKey := fs.String("k", "", "API key for dynamic inventory")
 
 	_ = fs.Parse(args)
 
@@ -43,23 +39,6 @@ func runExec(args []string) {
 	}
 
 	targetPattern := fs.Arg(0)
-
-	s := *S || *useSsh
-	i := *I
-	if *invURL != "" {
-		i = *invURL
-	}
-	k := *K
-	if *invKey != "" {
-		k = *invKey
-	}
-
-	if err := loadInventory(s, i, k); err != nil {
-		fmt.Fprintf(os.Stderr, "error loading inventory: %v\n", err)
-		os.Exit(1)
-	}
-
-	nodes := sshw.GetConfig()
 	targets := sshw.MatchTargets(nodes, targetPattern)
 	if len(targets) == 0 {
 		fmt.Fprintf(os.Stderr, "no targets matched %q\n", targetPattern)

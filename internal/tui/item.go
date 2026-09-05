@@ -22,14 +22,14 @@ func (i item) FilterValue() string {
 
 // indexedLeafItem is a flattened connectable host for the global palette.
 type indexedLeafItem struct {
-	idx IndexedHost
+	idx sshw.IndexedHost
 }
 
 func (i indexedLeafItem) FilterValue() string {
 	return filterValueForIndexed(i.idx)
 }
 
-func filterValueForIndexed(idx IndexedHost) string {
+func filterValueForIndexed(idx sshw.IndexedHost) string {
 	n := idx.Node
 	user := n.EffectiveUser()
 	port := ""
@@ -378,6 +378,6 @@ func (d compactDelegate) renderHost(w io.Writer, node *sshw.Node, sel bool, term
 	d.renderHostRow(w, node, sel, termWidth, hostRowOpts{nameDenom: 3})
 }
 
-func (d compactDelegate) renderIndexedLeaf(w io.Writer, idx IndexedHost, sel bool, termWidth int) {
+func (d compactDelegate) renderIndexedLeaf(w io.Writer, idx sshw.IndexedHost, sel bool, termWidth int) {
 	d.renderHostRow(w, idx.Node, sel, termWidth, hostRowOpts{breadcrumb: idx.Breadcrumb, nameDenom: 4})
 }

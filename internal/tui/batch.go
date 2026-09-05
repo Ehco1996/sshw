@@ -20,10 +20,9 @@ import (
 // label these hosts "cancelled" instead of "timeout".
 var errBatchCancelled = errors.New("cancelled by user")
 
-const (
-	batchParallelism = 8
-	batchTimeout     = 30 * time.Second
-)
+// dangerConfirmPhrase is the exact string the user must type at the
+// danger-confirm screen.
+const dangerConfirmPhrase = "yes I am sure"
 
 type uiMode int
 
@@ -113,7 +112,7 @@ func newBatchState() *batchState {
 		progress:     pb,
 		input:        in,
 		confirmInput: confirm,
-		sem:          make(chan struct{}, batchParallelism),
+		sem:          make(chan struct{}, sshw.DefaultBatchConcurrency),
 	}
 }
 
@@ -189,14 +188,13 @@ func runCommandCmd(node *sshw.Node, cmd string, gen int, sem chan struct{}) tea.
 		sem <- struct{}{}
 		defer func() { <-sem }()
 
-		ctx, cancel := context.WithTimeout(context.Background(), batchTimeout)
+		ctx, cancel := context.WithTimeout(context.Background(), sshw.DefaultBatchTimeout)
 		defer cancel()
 
-		runner := sshw.NewRunner(node)
 		return batchResultMsg{
 			node:       node,
 			generation: gen,
-			res:        runner.RunCommand(ctx, cmd),
+			res:        sshw.ExecNode(ctx, node, cmd),
 		}
 	}
 }

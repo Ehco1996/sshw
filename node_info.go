@@ -25,21 +25,12 @@ func BuildNodeInfo(n *Node, path []string) NodeInfo {
 	}
 }
 
-// ListNodeInfos traverses the config tree and returns NodeInfo for all connectable leaf nodes in tree order.
+// ListNodeInfos uses FlattenLeaves (SSOT) to return NodeInfo for all connectable leaf nodes in tree order.
 func ListNodeInfos(roots []*Node) []NodeInfo {
-	var out []NodeInfo
-	var walk func([]*Node, []string)
-	walk = func(nodes []*Node, ancestors []string) {
-		for _, n := range nodes {
-			if n.Connectable() {
-				out = append(out, BuildNodeInfo(n, ancestors))
-			}
-			if len(n.Children) > 0 {
-				next := append(append([]string(nil), ancestors...), n.Name)
-				walk(n.Children, next)
-			}
-		}
+	leaves := FlattenLeaves(roots)
+	out := make([]NodeInfo, len(leaves))
+	for i, l := range leaves {
+		out[i] = BuildNodeInfo(l.Node, l.Path)
 	}
-	walk(roots, nil)
 	return out
 }

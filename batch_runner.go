@@ -10,10 +10,15 @@ import (
 
 var ErrDangerousCommand = errors.New("dangerous command detected")
 
+const (
+	DefaultBatchConcurrency = 8
+	DefaultBatchTimeout     = 30 * time.Second
+)
+
 // BatchOptions configures batch execution across nodes.
 type BatchOptions struct {
-	Concurrency int                     // Max concurrent connections; defaults to 8
-	Timeout     time.Duration           // Per-host execution timeout; defaults to 30s
+	Concurrency int                     // Max concurrent connections; defaults to DefaultBatchConcurrency
+	Timeout     time.Duration           // Per-host execution timeout; defaults to DefaultBatchTimeout
 	ForceDanger bool                    // Allow commands flagged as dangerous
 	NoAudit     bool                    // Skip writing to audit log (e.g. in tests)
 	RunnerFunc  func(node *Node) Runner // Factory for Runner; defaults to NewRunner
@@ -57,11 +62,11 @@ func RunBatch(ctx context.Context, targets []*Node, cmd string, opts BatchOption
 
 	concurrency := opts.Concurrency
 	if concurrency <= 0 {
-		concurrency = 8
+		concurrency = DefaultBatchConcurrency
 	}
 	timeout := opts.Timeout
 	if timeout <= 0 {
-		timeout = 30 * time.Second
+		timeout = DefaultBatchTimeout
 	}
 	runnerFunc := opts.RunnerFunc
 	if runnerFunc == nil {
