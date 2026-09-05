@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 	"github.com/yinheli/sshw"
 	"github.com/yinheli/sshw/internal/tui"
 )
@@ -13,9 +14,10 @@ import (
 var (
 	Build = "devel"
 
-	useSSHConfig bool
-	dynamicURL   string
-	dynamicKey   string
+	explicitConfigPath string
+	useSSHConfig       bool
+	dynamicURL         string
+	dynamicKey         string
 
 	rootCmd = &cobra.Command{
 		Use:          "sshw [flags] [subcommand | host]",
@@ -72,6 +74,7 @@ var (
 
 func loadNodes() ([]*sshw.Node, error) {
 	return sshw.LoadInventory(sshw.InventoryOptions{
+		ConfigPath:   explicitConfigPath,
 		UseSSHConfig: useSSHConfig,
 		DynamicURL:   dynamicURL,
 		DynamicKey:   dynamicKey,
@@ -80,6 +83,7 @@ func loadNodes() ([]*sshw.Node, error) {
 
 func init() {
 	rootCmd.Version = Build
+	rootCmd.PersistentFlags().StringVar(&explicitConfigPath, "config", "", "path to YAML config file")
 	rootCmd.PersistentFlags().BoolVarP(&useSSHConfig, "ssh-config", "s", false, "use local ssh config '~/.ssh/config'")
 	rootCmd.PersistentFlags().StringVarP(&dynamicURL, "inventory-url", "i", "", "dynamic inventory URL")
 	rootCmd.PersistentFlags().StringVarP(&dynamicKey, "inventory-key", "k", "", "API key for dynamic inventory")
@@ -89,27 +93,65 @@ func init() {
 	rootCmd.AddCommand(runCmd)
 }
 
+func lookupFlag(cmd *cobra.Command, name string, isShorthand bool) *pflag.Flag {
+	if isShorthand {
+		if f := cmd.Flags().ShorthandLookup(name); f != nil {
+			return f
+		}
+		return cmd.PersistentFlags().ShorthandLookup(name)
+	}
+	return cmd.Flag(name)
+}
+
 // prepareArgs rewrites args so that arbitrary host targets (e.g. `sshw dev`) route to `connectCmd`.
 func prepareArgs(cmd *cobra.Command, args []string) []string {
 	if len(args) == 0 {
 		return args
 	}
 
-	for i, arg := range args {
+	i := 0
+	for i < len(args) {
+		arg := args[i]
 		if arg == "--" {
 			break
 		}
-		if !strings.HasPrefix(arg, "-") {
-			foundCmd, _, _ := cmd.Find([]string{arg})
-			if foundCmd != nil && foundCmd != cmd {
-				return args
+		if strings.HasPrefix(arg, "--") {
+			flagPart := strings.TrimPrefix(arg, "--")
+			if strings.Contains(flagPart, "=") {
+				i++
+				continue
 			}
-			newArgs := make([]string, 0, len(args)+1)
-			newArgs = append(newArgs, args[:i]...)
-			newArgs = append(newArgs, "connect")
-			newArgs = append(newArgs, args[i:]...)
-			return newArgs
+			f := lookupFlag(cmd, flagPart, false)
+			if f != nil && f.NoOptDefVal == "" {
+				i += 2
+				continue
+			}
+			i++
+			continue
+		} else if strings.HasPrefix(arg, "-") && len(arg) > 1 {
+			flagPart := strings.TrimPrefix(arg, "-")
+			if strings.Contains(flagPart, "=") {
+				i++
+				continue
+			}
+			f := lookupFlag(cmd, flagPart, true)
+			if f != nil && f.NoOptDefVal == "" {
+				i += 2
+				continue
+			}
+			i++
+			continue
 		}
+
+		foundCmd, _, _ := cmd.Find([]string{arg})
+		if foundCmd != nil && foundCmd != cmd {
+			return args
+		}
+		newArgs := make([]string, 0, len(args)+1)
+		newArgs = append(newArgs, args[:i]...)
+		newArgs = append(newArgs, "connect")
+		newArgs = append(newArgs, args[i:]...)
+		return newArgs
 	}
 	return args
 }

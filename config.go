@@ -132,6 +132,7 @@ func SaveConfig() error {
 
 // InventoryOptions defines the source and credentials for loading node inventory.
 type InventoryOptions struct {
+	ConfigPath   string // explicit path to YAML config file
 	UseSSHConfig bool   // read from ~/.ssh/config
 	DynamicURL   string // URL to fetch dynamic inventory from
 	DynamicKey   string // API key for dynamic inventory
@@ -152,6 +153,19 @@ func LoadInventory(opts InventoryOptions) ([]*Node, error) {
 		if err := LoadSshConfig(); err != nil {
 			return nil, err
 		}
+		return GetConfig(), nil
+	}
+	if opts.ConfigPath != "" {
+		path, b, err := loadConfigFromPaths(opts.ConfigPath)
+		if err != nil {
+			return nil, err
+		}
+		var c []*Node
+		if err := yaml.Unmarshal(b, &c); err != nil {
+			return nil, err
+		}
+		config = c
+		configPath = path
 		return GetConfig(), nil
 	}
 	if err := LoadConfig(); err != nil {
