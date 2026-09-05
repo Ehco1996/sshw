@@ -21,7 +21,30 @@ var (
 	log = sshw.GetLogger()
 )
 
+func loadInventory(s bool, i, k string) error {
+	if i != "" {
+		if k == "" {
+			return fmt.Errorf("-k (API key) is required when using -i")
+		}
+		return sshw.LoadDynamicConfig(i, k)
+	}
+	if s {
+		return sshw.LoadSshConfig()
+	}
+	return sshw.LoadConfig()
+}
+
 func main() {
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: sshw [flags] [subcommand | host]\n\n")
+		fmt.Fprintf(os.Stderr, "Subcommands:\n")
+		fmt.Fprintf(os.Stderr, "  list [--json]              List configured hosts\n")
+		fmt.Fprintf(os.Stderr, "  run [flags] <target> <cmd> Run command on target host(s)\n")
+		fmt.Fprintf(os.Stderr, "  exec [flags] <target> <cmd> Alias for run\n\n")
+		fmt.Fprintf(os.Stderr, "Flags:\n")
+		flag.PrintDefaults()
+	}
+
 	flag.Parse()
 	if !flag.Parsed() {
 		flag.Usage()
@@ -40,28 +63,21 @@ func main() {
 		return
 	}
 
-	if *I != "" {
-		if *K == "" {
-			fmt.Fprintln(os.Stderr, "-k (API key) is required when using -i")
-			os.Exit(1)
+	if flag.NArg() > 0 {
+		subcmd := flag.Arg(0)
+		switch subcmd {
+		case "list":
+			runList(flag.Args()[1:])
+			return
+		case "run", "exec":
+			runExec(flag.Args()[1:])
+			return
 		}
-		err := sshw.LoadDynamicConfig(*I, *K)
-		if err != nil {
-			log.Error("load dynamic config error", err)
-			os.Exit(1)
-		}
-	} else if *S {
-		err := sshw.LoadSshConfig()
-		if err != nil {
-			log.Error("load ssh config error", err)
-			os.Exit(1)
-		}
-	} else {
-		err := sshw.LoadConfig()
-		if err != nil {
-			log.Error("load config error", err)
-			os.Exit(1)
-		}
+	}
+
+	if err := loadInventory(*S, *I, *K); err != nil {
+		log.Error("load config error", err)
+		os.Exit(1)
 	}
 
 	token := ""

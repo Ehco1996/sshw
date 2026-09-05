@@ -40,6 +40,43 @@ SSHW_SSH_CONFIG_PATH=/path/to/ssh_config sshw -s
 - `SSHW_RUN_LOG_DIR` — base directory for batch-run audit logs (see [audit log](#audit-log)). Defaults to `$XDG_STATE_HOME/sshw/runs` or `~/.local/state/sshw/runs`.
 - `SSHW_BACKGROUND` — the TUI defaults to a **light** terminal palette (auto-detection is unreliable when sshw runs over an SSH session). Set `SSHW_BACKGROUND=dark` to switch.
 
+## CLI Usage (Non-interactive & Agent orchestration)
+
+sshw supports headless commands for scripting, automation, and AI agent orchestration:
+
+### List hosts (`sshw list`)
+
+```bash
+# Formatted table
+sshw list
+
+# JSON format (credentials strictly redacted)
+sshw list --json
+
+# Using OpenSSH config or dynamic inventory
+sshw -s list --json
+```
+
+### Run commands (`sshw run` / `sshw exec`)
+
+```bash
+# Run on a single host (direct stdout/stderr pass-through, remote exit status)
+sshw run dev "uptime"
+
+# Run on a group or pattern with wildcards
+sshw run "cluster" "df -h"
+sshw run "vultr-*" "uname -a"
+sshw run all "free -m"
+
+# Structured JSON output for agents & scripts
+sshw run --json "vultr-*" "uptime"
+
+# Options: concurrency, timeout, force dangerous commands, dry-run
+sshw run -c 16 -t 10s "all" "hostname"
+sshw run --dry-run "cluster" "systemctl status ehco"
+sshw run --force dev "reboot"
+```
+
 config example:
 
 <!-- prettier-ignore -->
